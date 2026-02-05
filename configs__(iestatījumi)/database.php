@@ -3,7 +3,7 @@
 define('DB_HOST', 'localhost');
 define('DB_USER', 'root');
 define('DB_PASS', '');
-define('DB_NAME', 'beigudarbs');
+define('DB_NAME', 'apgūstivairāk');
 
 $conn = new mysqli(DB_HOST, DB_USER, DB_PASS, DB_NAME);
 
@@ -23,6 +23,7 @@ ini_set('session.gc_maxlifetime', 86400); // 24 hours
 session_start();
 
 ?>
+
 
 
 

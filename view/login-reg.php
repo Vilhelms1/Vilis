@@ -1,12 +1,69 @@
+<?php 
+require_once __DIR__ . '/../configs__(iestatījumi)/database.php';
+require_once __DIR__ . '/../controlers__(loģistika)/autenController.php';
+
+if (isset($_SESSION['user_id'])) {
+    if (isset($_SESSION['role']) && $_SESSION['role'] === 'admin') {
+        header('Location: ' . BASE_URL . 'view/admin/admin_dashboard.php');
+    } else {
+        header('Location: ' . BASE_URL . 'view/student/student_dashboard.php');
+    }
+    exit();
+}
+
+$error = null;
+$success = null;
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $formType = $_POST['form_type'] ?? '';
+
+    if ($formType === 'login') {
+        $username = trim($_POST['username'] ?? '');
+        $password = $_POST['password'] ?? '';
+
+        $result = AuthController::login($username, $password);
+        if (!empty($result['success'])) {
+            if ($result['role'] === 'admin') {
+                header('Location: ' . BASE_URL . 'view/admin/admin_dashboard.php');
+            } else {
+                header('Location: ' . BASE_URL . 'view/student/student_dashboard.php');
+            }
+            exit();
+        }
+
+        $error = $result['message'] ?? 'Login failed';
+    }
+
+    if ($formType === 'register') {
+        $firstName = trim($_POST['first_name'] ?? '');
+        $lastName = trim($_POST['last_name'] ?? '');
+        $username = trim($_POST['username'] ?? '');
+        $email = trim($_POST['email'] ?? '');
+        $password = $_POST['password'] ?? '';
+        $confirmPassword = $_POST['confirm_password'] ?? '';
+
+        $result = AuthController::register($username, $email, $password, $confirmPassword, $firstName, $lastName);
+        if (!empty($result['success'])) {
+            $success = $result['message'] ?? 'Registration successful. Please login.';
+        } else {
+            $error = $result['message'] ?? 'Registration failed';
+        }
+    }
+}
+?>
+
+
+
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ApgūstiVairāk</title>
-    <link rel="stylesheet" href="/BeiguDarbs/public/css/login-style.css">
+    <link rel="stylesheet" href="/BeiguDarbs/assets/css/login-style.css">
 </head>
-<body class="webpage" style="--login-bg: url('/BeiguDarbs/public/image/picture.jpg');">
+<body class="webpage" style="--login-bg: url('/BeiguDarbs/assets/image/picture.jpg');">
     <div class="container">
         <div class="VS-box">
             <h1>📒ApgūstiVairāk</h1>
@@ -19,7 +76,8 @@
             
             <!-- Login Form -->
             <div id="login" class="login">
-                <form method="POST" action="#">
+                <form method="POST" action="">
+                    <input type="hidden" name="form_type" value="login">
                     <div class="form-group">
                         <label for="login_username">Username or Email</label>
                         <input type="text" id="login_username" name="username" required>
@@ -32,15 +90,19 @@
                     
                     <button type="submit" class="btn-primary">Login</button>
                     
-                    <?php if(isset($_GET['error'])): ?>
-                        <div class="alert alert-danger"><?php echo htmlspecialchars($_GET['error']); ?></div>
+                    <?php if($error): ?>
+                        <div class="alert alert-danger"><?php echo htmlspecialchars($error); ?></div>
+                    <?php endif; ?>
+                    <?php if($success): ?>
+                        <div class="alert alert-success"><?php echo htmlspecialchars($success); ?></div>
                     <?php endif; ?>
                 </form>
             </div>
             
             <!-- Register Form -->
             <div id="register" class="Register-form">
-                <form method="POST" action="#">
+                <form method="POST" action="">
+                    <input type="hidden" name="form_type" value="register">
                     <div class="form-row">
                         <div class="form-group">
                             <label for="first_name">First Name</label>
@@ -75,12 +137,12 @@
                     
                     <button type="submit" class="btn-primary">Register</button>
                     
-                    <?php if(isset($_GET['reg_error'])): ?>
-                        <div class="alert alert-danger"><?php echo htmlspecialchars($_GET['reg_error']); ?></div>
+                    <?php if($error): ?>
+                        <div class="alert alert-danger"><?php echo htmlspecialchars($error); ?></div>
                     <?php endif; ?>
                     
-                    <?php if(isset($_GET['success'])): ?>
-                        <div class="alert alert-success"><?php echo htmlspecialchars($_GET['success']); ?></div>
+                    <?php if($success): ?>
+                        <div class="alert alert-success"><?php echo htmlspecialchars($success); ?></div>
                     <?php endif; ?>
 
                 </form>
