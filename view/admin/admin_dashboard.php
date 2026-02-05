@@ -20,6 +20,7 @@ $classes = ClassController::get_admin_classes($admin_id);
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Dashboard - ApgūstiVairāk</title>
     <link rel="stylesheet" href="../../assets/css/style.css">
+       <link rel="stylesheet" href="../../assets/css/majaslapas-disange.css">
 </head>
 <body>
     <nav class="navbar">
@@ -33,7 +34,7 @@ $classes = ClassController::get_admin_classes($admin_id);
     </nav>
     
     <div class="container">
-        <div class="dashboard-header">
+          <div class="dashboard-header">
             <h1>Admin Dashboard</h1>
             <button class="btn btn-primary" onclick="openModal('classModal')">+ Create Class</button>
         </div>

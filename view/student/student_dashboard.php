@@ -26,6 +26,7 @@ $progress = $progress_stmt->get_result()->fetch_assoc();
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>My Classes - ApgūstiVairāk</title>
     <link rel="stylesheet" href="../../assets/css/style.css">
+    <link rel="stylesheet" href="../../assets/css/majaslapas-disange.css">
 </head>
 <body>
     <nav class="navbar">
