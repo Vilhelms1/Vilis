@@ -44,7 +44,8 @@ $materials = $materials_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo htmlspecialchars($class['name']); ?> - ApgūstiVairāk</title>
-    <link rel="stylesheet" href="../../assets/css/style.css">
+   <link rel="stylesheet" href="../../assets/css/style.css">
+       <link rel="stylesheet" href="../../assets/css/majaslapas-disange.css">
 </head>
 <body>
     <nav class="navbar">

@@ -1,15 +1,18 @@
 
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap");
+
 :root {
-	--bg: #f6f7fb;
+	--bg: #f4f6fb;
 	--card: #ffffff;
-	--text: #1f2937;
+	--text: #111827;
 	--muted: #6b7280;
-	--primary: #2563eb;
-	--primary-dark: #1e40af;
+	--primary: #0f766e;
+	--primary-dark: #115e59;
+	--accent: #f97316;
 	--danger: #dc2626;
 	--border: #e5e7eb;
-	--shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
-	--radius: 12px;
+	--shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+	--radius: 14px;
 }
 
 * {
@@ -19,10 +22,10 @@
 }
 
 body {
-	font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+	font-family: "Space Grotesk", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
 	background: var(--bg);
 	color: var(--text);
-	line-height: 1.5;
+	line-height: 1.6;
 }
 
 a {
@@ -99,7 +102,7 @@ a {
 }
 
 .btn-secondary {
-	background: #eef2ff;
+	background: #ecfeff;
 	color: var(--primary-dark);
 }
 
@@ -145,13 +148,122 @@ a {
 }
 
 .badge {
-	background: #ecfeff;
-	color: #0f766e;
-	border: 1px solid #a5f3fc;
+	background: #fff7ed;
+	color: #9a3412;
+	border: 1px solid #fed7aa;
 	padding: 4px 8px;
 	border-radius: 999px;
 	font-size: 12px;
 	font-weight: 600;
+}
+
+/* Class detail tabs */
+.tabs-container {
+	display: inline-flex;
+	gap: 6px;
+	padding: 6px;
+	background: #ffffff;
+	border: 1px solid var(--border);
+	border-radius: 999px;
+	box-shadow: var(--shadow);
+	margin-bottom: 20px;
+}
+
+.tab-btn {
+	border: none;
+	background: transparent;
+	color: var(--muted);
+	font-weight: 600;
+	padding: 8px 14px;
+	border-radius: 999px;
+	cursor: pointer;
+	transition: all 0.2s ease;
+}
+
+.tab-btn.active {
+	background: var(--primary);
+	color: #ffffff;
+	box-shadow: 0 6px 12px rgba(15, 118, 110, 0.2);
+}
+
+.tab-btn:hover {
+	color: var(--text);
+}
+
+.tab-content {
+	display: none;
+	animation: tabFade 0.25s ease;
+}
+
+.tab-content.active {
+	display: block;
+}
+
+@keyframes tabFade {
+	from { opacity: 0; transform: translateY(6px); }
+	to { opacity: 1; transform: translateY(0); }
+}
+
+/* Class detail cards */
+.quiz-card {
+	border-left: 4px solid var(--primary);
+	transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.quiz-card:hover {
+	transform: translateY(-3px);
+	box-shadow: 0 14px 28px rgba(15, 23, 42, 0.12);
+}
+
+.quiz-meta {
+	display: flex;
+	gap: 12px;
+	color: var(--muted);
+	font-size: 13px;
+	margin: 10px 0 8px;
+}
+
+.materials-list {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+	gap: 14px;
+	margin-top: 12px;
+}
+
+.material-item {
+	background: var(--card);
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	padding: 14px 16px;
+	box-shadow: var(--shadow);
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+}
+
+/* Students list */
+.card ul {
+	list-style: none;
+	display: grid;
+	gap: 10px;
+}
+
+.card ul li {
+	padding: 10px 12px;
+	border: 1px solid var(--border);
+	border-radius: 10px;
+	background: #f8fafc;
+}
+
+/* Links in navbar */
+.nav-back {
+	color: var(--muted);
+	font-weight: 600;
+}
+
+.nav-back:hover {
+	color: var(--text);
 }
 
 /* Progress */

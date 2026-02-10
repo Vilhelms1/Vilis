@@ -10,6 +10,59 @@ if (!AuthController::is_logged_in() || !AuthController::is_admin()) {
 }
 
 $admin_id = $_SESSION['user_id'];
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    header('Content-Type: application/json');
+    $action = $_POST['action'] ?? null;
+    $payload = null;
+
+    if ($action === null) {
+        $raw = file_get_contents('php://input');
+        $payload = json_decode($raw, true);
+        if (is_array($payload)) {
+            $action = $payload['action'] ?? null;
+        }
+    }
+
+    if ($action === 'create_class') {
+        $name = trim($_POST['name'] ?? '');
+        $description = trim($_POST['description'] ?? '');
+
+        if ($name === '') {
+            echo json_encode(['success' => false, 'message' => 'Class name is required']);
+            exit();
+        }
+
+        $result = ClassController::create_class($name, $description, $admin_id);
+        echo json_encode($result);
+        exit();
+    }
+
+    if ($action === 'delete_class') {
+        $class_id = (int)($_POST['class_id'] ?? ($payload['class_id'] ?? 0));
+
+        if ($class_id <= 0) {
+            echo json_encode(['success' => false, 'message' => 'Invalid class id']);
+            exit();
+        }
+
+        $delete_query = "DELETE FROM classes WHERE id = ? AND admin_id = ?";
+        $delete_stmt = $conn->prepare($delete_query);
+        $delete_stmt->bind_param('ii', $class_id, $admin_id);
+        $delete_stmt->execute();
+
+        if ($delete_stmt->affected_rows > 0) {
+            echo json_encode(['success' => true]);
+        } else {
+            echo json_encode(['success' => false, 'message' => 'Class not found']);
+        }
+        exit();
+    }
+
+    echo json_encode(['success' => false, 'message' => 'Unknown action']);
+    exit();
+}
+
 $classes = ClassController::get_admin_classes($admin_id);
 ?>
 
@@ -63,6 +116,7 @@ $classes = ClassController::get_admin_classes($admin_id);
             <span class="close" onclick="closeModal('classModal')">&times;</span>
             <h2>Create New Class</h2>
             <form id="createClassForm">
+                <input type="hidden" name="action" value="create_class">
                 <div class="form-group">
                     <label for="class_name">Class Name</label>
                     <input type="text" id="class_name" name="name" required placeholder="e.g., Programming Basics">
@@ -89,10 +143,10 @@ $classes = ClassController::get_admin_classes($admin_id);
         
         function deleteClass(classId) {
             if (confirm('Are you sure you want to delete this class? This action cannot be undone.')) {
-                fetch('api/delete_class.php', {
+                fetch('admin_dashboard.php', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({class_id: classId})
+                    body: JSON.stringify({action: 'delete_class', class_id: classId})
                 }).then(r => r.json()).then(d => {
                     if (d.success) location.reload();
                 });
@@ -108,7 +162,7 @@ $classes = ClassController::get_admin_classes($admin_id);
                     
                     const formData = new FormData(this);
                     
-                    fetch('api/create_class.php', {
+                    fetch('admin_dashboard.php', {
                         method: 'POST',
                         body: formData
                     })
