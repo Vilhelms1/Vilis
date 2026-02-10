@@ -148,6 +148,7 @@ $materials = $materials_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Manage Materials - ApgūstiVairāk</title>
     <link rel="stylesheet" href="../../assets/css/style.css">
+       <link rel="stylesheet" href="../../assets/css/majaslapas-disange.css">
 </head>
 <body>
     <nav class="navbar">
