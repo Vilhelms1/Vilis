@@ -48,7 +48,7 @@ $classes = ClassController::get_admin_classes($admin_id);
                     </div>
                     <p><?php echo htmlspecialchars($class['description']); ?></p>
                     <div class="card-actions">
-                        <a href="manage_class.php?id=<?php echo $class['id']; ?>" class="btn btn-secondary">Manage</a>
+                        <a href="class_detail.php?id=<?php echo $class['id']; ?>" class="btn btn-secondary">Manage</a>
                         <a href="manage_quizzes.php?class_id=<?php echo $class['id']; ?>" class="btn btn-secondary">Quizzes</a>
                         <button class="btn btn-danger btn-small" onclick="deleteClass(<?php echo $class['id']; ?>)">Delete</button>
                     </div>
