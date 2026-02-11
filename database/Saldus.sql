@@ -1,60 +1,71 @@
--- Create Database
-CREATE DATABASE IF NOT EXISTS apgūstivairāk
-;
-USE apgūstivairāk;
+CREATE DATABASE IF NOT EXISTS Saldus
+  CHARACTER SET utf8mb4
+  COLLATE utf8mb4_general_ci;
+USE Saldus;
 
--- Users Table
 CREATE TABLE IF NOT EXISTS users (
     id INT PRIMARY KEY AUTO_INCREMENT,
     username VARCHAR(100) UNIQUE NOT NULL,
-    email VARCHAR(100) UNIQUE NOT NULL,
+    email VARCHAR(150) UNIQUE NOT NULL,
     password VARCHAR(255) NOT NULL,
     first_name VARCHAR(100),
     last_name VARCHAR(100),
-    role ENUM('admin', 'student') DEFAULT 'student',
+    role ENUM('admin', 'teacher', 'student') DEFAULT 'student',
+    is_active TINYINT DEFAULT 1,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    is_active TINYINT DEFAULT 1
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
--- Classes Table
 CREATE TABLE IF NOT EXISTS classes (
     id INT PRIMARY KEY AUTO_INCREMENT,
-    name VARCHAR(100) NOT NULL,
+    name VARCHAR(150) NOT NULL,
     description TEXT,
-    admin_id INT NOT NULL,
+    teacher_id INT NOT NULL,
+    is_active TINYINT DEFAULT 1,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (admin_id) REFERENCES users(id)
+    FOREIGN KEY (teacher_id) REFERENCES users(id)
 );
 
--- Class Enrollments 
 CREATE TABLE IF NOT EXISTS class_enrollments (
     id INT PRIMARY KEY AUTO_INCREMENT,
     class_id INT NOT NULL,
-    user_id INT NOT NULL,
+    student_id INT NOT NULL,
     enrolled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE KEY unique_enrollment (class_id, user_id),
+    UNIQUE KEY unique_enrollment (class_id, student_id),
     FOREIGN KEY (class_id) REFERENCES classes(id) ON DELETE CASCADE,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    FOREIGN KEY (student_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
--- Quizzes Table
+CREATE TABLE IF NOT EXISTS class_materials (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    class_id INT NOT NULL,
+    title VARCHAR(150) NOT NULL,
+    file_path VARCHAR(255),
+    file_type VARCHAR(50),
+    material_type ENUM('document', 'image', 'other') DEFAULT 'document',
+    uploaded_by INT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (class_id) REFERENCES classes(id) ON DELETE CASCADE,
+    FOREIGN KEY (uploaded_by) REFERENCES users(id)
+);
+
 CREATE TABLE IF NOT EXISTS quizzes (
     id INT PRIMARY KEY AUTO_INCREMENT,
     class_id INT NOT NULL,
     title VARCHAR(150) NOT NULL,
     description TEXT,
-    admin_id INT NOT NULL,
+    created_by INT NOT NULL,
     time_limit INT DEFAULT 0,
     passing_score INT DEFAULT 60,
+    show_leaderboard TINYINT DEFAULT 1,
+    is_active TINYINT DEFAULT 1,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (class_id) REFERENCES classes(id) ON DELETE CASCADE,
-    FOREIGN KEY (admin_id) REFERENCES users(id)
+    FOREIGN KEY (created_by) REFERENCES users(id)
 );
 
--- Questions Table
 CREATE TABLE IF NOT EXISTS questions (
     id INT PRIMARY KEY AUTO_INCREMENT,
     quiz_id INT NOT NULL,
@@ -65,7 +76,6 @@ CREATE TABLE IF NOT EXISTS questions (
     FOREIGN KEY (quiz_id) REFERENCES quizzes(id) ON DELETE CASCADE
 );
 
--- Answers (Options for questions)
 CREATE TABLE IF NOT EXISTS answers (
     id INT PRIMARY KEY AUTO_INCREMENT,
     question_id INT NOT NULL,
@@ -74,7 +84,6 @@ CREATE TABLE IF NOT EXISTS answers (
     FOREIGN KEY (question_id) REFERENCES questions(id) ON DELETE CASCADE
 );
 
--- Quiz Results
 CREATE TABLE IF NOT EXISTS quiz_results (
     id INT PRIMARY KEY AUTO_INCREMENT,
     quiz_id INT NOT NULL,
@@ -82,6 +91,7 @@ CREATE TABLE IF NOT EXISTS quiz_results (
     score INT DEFAULT 0,
     total_points INT DEFAULT 0,
     percentage DECIMAL(5,2) DEFAULT 0,
+    grade TINYINT DEFAULT NULL,
     passed TINYINT DEFAULT 0,
     submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     time_taken INT DEFAULT 0,
@@ -89,7 +99,6 @@ CREATE TABLE IF NOT EXISTS quiz_results (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
--- Student Answers 
 CREATE TABLE IF NOT EXISTS student_answers (
     id INT PRIMARY KEY AUTO_INCREMENT,
     result_id INT NOT NULL,
@@ -101,26 +110,52 @@ CREATE TABLE IF NOT EXISTS student_answers (
     FOREIGN KEY (answer_id) REFERENCES answers(id)
 );
 
--- Class Materials/Documents
-CREATE TABLE IF NOT EXISTS class_materials (
+CREATE TABLE IF NOT EXISTS class_assignments (
     id INT PRIMARY KEY AUTO_INCREMENT,
     class_id INT NOT NULL,
     title VARCHAR(150) NOT NULL,
-    file_path VARCHAR(255),
-    file_type VARCHAR(50),
-    uploaded_by INT NOT NULL,
+    description TEXT,
+    due_at DATETIME DEFAULT NULL,
+    allow_submissions TINYINT DEFAULT 1,
+    created_by INT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (class_id) REFERENCES classes(id) ON DELETE CASCADE,
-    FOREIGN KEY (uploaded_by) REFERENCES users(id)
+    FOREIGN KEY (created_by) REFERENCES users(id)
 );
 
--- Create Indexes 
+CREATE TABLE IF NOT EXISTS assignment_submissions (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    assignment_id INT NOT NULL,
+    student_id INT NOT NULL,
+    file_path VARCHAR(255) NOT NULL,
+    file_type VARCHAR(50),
+    submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    grade TINYINT DEFAULT NULL,
+    feedback TEXT,
+    FOREIGN KEY (assignment_id) REFERENCES class_assignments(id) ON DELETE CASCADE,
+    FOREIGN KEY (student_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS school_news (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    title VARCHAR(200) NOT NULL,
+    body TEXT,
+    image_path VARCHAR(255),
+    is_active TINYINT DEFAULT 1,
+    created_by INT NOT NULL,
+    published_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (created_by) REFERENCES users(id)
+);
+
 CREATE INDEX idx_user_role ON users(role);
-CREATE INDEX idx_class_admin ON classes(admin_id);
-CREATE INDEX idx_enrollment_user ON class_enrollments(user_id);
+CREATE INDEX idx_class_teacher ON classes(teacher_id);
+CREATE INDEX idx_enrollment_student ON class_enrollments(student_id);
 CREATE INDEX idx_enrollment_class ON class_enrollments(class_id);
 CREATE INDEX idx_quiz_class ON quizzes(class_id);
 CREATE INDEX idx_result_user ON quiz_results(user_id);
 CREATE INDEX idx_result_quiz ON quiz_results(quiz_id);
 CREATE INDEX idx_question_quiz ON questions(quiz_id);
 CREATE INDEX idx_answer_question ON answers(question_id);
+CREATE INDEX idx_assignment_class ON class_assignments(class_id);
+CREATE INDEX idx_submission_assignment ON assignment_submissions(assignment_id);
+CREATE INDEX idx_news_active ON school_news(is_active);

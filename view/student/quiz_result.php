@@ -31,18 +31,23 @@ $answers = $answers_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 ?>
 
 <!DOCTYPE html>
-<html lang="en">
+<html lang="lv">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Quiz Results - ApgūstiVairāk</title>
-    <link rel="stylesheet" href="../../assets/css/style.css">
+    <link rel="stylesheet" href="../../assets/css/modern-style.css">
+    <script defer src="../../assets/js/app.js"></script>
 </head>
-<body>
-    <nav class="navbar">
+<body data-theme="light" data-lang="lv">
+    <nav class="navbar glass">
         <div class="nav-container">
             <div class="nav-brand">Quiz Results</div>
-            <a href="../process_logout.php" class="btn btn-small">Logout</a>
+            <div class="nav-actions">
+                <button class="btn btn-ghost btn-small" data-lang-toggle>LV / EN</button>
+                <button class="btn btn-ghost btn-small" data-theme-toggle>◐</button>
+                <a href="../process_logout.php" class="btn btn-small">Logout</a>
+            </div>
         </div>
     </nav>
     
@@ -54,44 +59,47 @@ $answers = $answers_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
                 <div class="large-score <?php echo $quiz_result['passed'] ? 'passed' : 'failed'; ?>">
                     <?php echo round($quiz_result['percentage'], 1); ?>%
                 </div>
-                <h2><?php echo $quiz_result['passed'] ? '✓ PASSED' : '✗ FAILED'; ?></h2>
-                <p>Passing score: <?php echo $quiz_result['passing_score']; ?>%</p>
+                <h2><?php echo $quiz_result['passed'] ? '✓ Nokārtots' : '✗ Nenokārtots'; ?></h2>
+                <p>Nokārtošanas slieksnis: <?php echo $quiz_result['passing_score']; ?>%</p>
+                <?php if (!empty($quiz_result['grade'])): ?>
+                    <p>Atzīme: <?php echo (int)$quiz_result['grade']; ?></p>
+                <?php endif; ?>
             </div>
             
             <div class="result-stats">
                 <div class="stat">
-                    <span>Score:</span>
-                    <strong><?php echo $quiz_result['score']; ?> / <?php echo $quiz_result['total_points']; ?> points</strong>
+                    <span>Punkti:</span>
+                    <strong><?php echo $quiz_result['score']; ?> / <?php echo $quiz_result['total_points']; ?> punkti</strong>
                 </div>
                 <div class="stat">
-                    <span>Time Taken:</span>
-                    <strong><?php echo floor($quiz_result['time_taken'] / 60); ?> min <?php echo $quiz_result['time_taken'] % 60; ?> sec</strong>
+                    <span>Laiks:</span>
+                    <strong><?php echo floor($quiz_result['time_taken'] / 60); ?> min <?php echo $quiz_result['time_taken'] % 60; ?> sek</strong>
                 </div>
                 <div class="stat">
-                    <span>Submitted:</span>
-                    <strong><?php echo date('M d, Y H:i', strtotime($quiz_result['submitted_at'])); ?></strong>
+                    <span>Iesniegts:</span>
+                    <strong><?php echo date('d.m.Y H:i', strtotime($quiz_result['submitted_at'])); ?></strong>
                 </div>
             </div>
         </div>
         
         <div class="answers-review">
-            <h2>Detailed Review</h2>
+            <h2>Detalizēts pārskats</h2>
             <?php foreach ($answers as $answer): ?>
                 <div class="answer-review <?php echo $answer['is_correct'] ? 'correct' : 'incorrect'; ?>">
                     <h4><?php echo htmlspecialchars($answer['question_text']); ?></h4>
                     <div class="review-content">
-                        <p>Your answer: <strong><?php echo htmlspecialchars($answer['answer_text']); ?></strong></p>
+                        <p>Tava atbilde: <strong><?php echo htmlspecialchars($answer['answer_text']); ?></strong></p>
                         <?php if (!$answer['is_correct']): ?>
-                            <p>Correct answer: <strong><?php echo htmlspecialchars($answer['correct_answer']); ?></strong></p>
+                            <p>Pareizā atbilde: <strong><?php echo htmlspecialchars($answer['correct_answer']); ?></strong></p>
                         <?php endif; ?>
                     </div>
-                    <span class="review-badge"><?php echo $answer['is_correct'] ? '✓ Correct' : '✗ Incorrect'; ?></span>
+                    <span class="review-badge"><?php echo $answer['is_correct'] ? '✓ Pareizi' : '✗ Nepareizi'; ?></span>
                 </div>
             <?php endforeach; ?>
         </div>
         
         <div class="action-buttons">
-            <a href="class_detail.php?id=<?php echo $quiz_result['class_id']; ?>" class="btn btn-primary">Back to Class</a>
+            <a href="class_details.php?id=<?php echo $quiz_result['class_id']; ?>" class="btn btn-primary">Atpakaļ uz klasi</a>
         </div>
     </div>
 </body>

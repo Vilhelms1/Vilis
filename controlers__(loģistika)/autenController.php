@@ -99,5 +99,34 @@ class AuthController {
     public static function is_admin() {
         return isset($_SESSION['role']) && $_SESSION['role'] === 'admin';
     }
+
+    public static function is_teacher() {
+        return isset($_SESSION['role']) && $_SESSION['role'] === 'teacher';
+    }
+
+    public static function is_student() {
+        return isset($_SESSION['role']) && $_SESSION['role'] === 'student';
+    }
+
+    public static function set_role($user_id, $role) {
+        global $conn;
+
+        $allowed = ['admin', 'teacher', 'student'];
+        if (!in_array($role, $allowed, true)) {
+            return ['success' => false, 'message' => 'Invalid role'];
+        }
+
+        $query = "UPDATE users SET role = ? WHERE id = ?";
+        $stmt = $conn->prepare($query);
+        if (!$stmt) {
+            return ['success' => false, 'message' => 'Database error: ' . $conn->error];
+        }
+        $stmt->bind_param("si", $role, $user_id);
+        if ($stmt->execute()) {
+            return ['success' => true];
+        }
+
+        return ['success' => false, 'message' => 'Update failed'];
+    }
 }
 ?>

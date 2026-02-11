@@ -4,12 +4,12 @@ require_once __DIR__ . '/../configs__(iestatījumi)/database.php';
 class QuizController {
     
     // Create quiz
-    public static function create_quiz($class_id, $title, $description, $admin_id, $time_limit, $passing_score) {
+    public static function create_quiz($class_id, $title, $description, $created_by, $time_limit, $passing_score, $show_leaderboard) {
         global $conn;
         
-        $query = "INSERT INTO quizzes (class_id, title, description, admin_id, time_limit, passing_score) VALUES (?, ?, ?, ?, ?, ?)";
+        $query = "INSERT INTO quizzes (class_id, title, description, created_by, time_limit, passing_score, show_leaderboard) VALUES (?, ?, ?, ?, ?, ?, ?)";
         $stmt = $conn->prepare($query);
-        $stmt->bind_param("issiii", $class_id, $title, $description, $admin_id, $time_limit, $passing_score);
+        $stmt->bind_param("issiiii", $class_id, $title, $description, $created_by, $time_limit, $passing_score, $show_leaderboard);
         
         if ($stmt->execute()) {
             return ['success' => true, 'quiz_id' => $stmt->insert_id];
@@ -50,7 +50,7 @@ class QuizController {
                     (SELECT COUNT(*) FROM quiz_results WHERE quiz_id = q.id) as attempts,
                     (SELECT COUNT(*) FROM questions WHERE quiz_id = q.id) as question_count
                   FROM quizzes q 
-                  WHERE q.class_id = ? 
+                  WHERE q.class_id = ? AND q.is_active = 1
                   ORDER BY q.created_at DESC";
         $stmt = $conn->prepare($query);
         $stmt->bind_param("i", $class_id);
@@ -62,7 +62,7 @@ class QuizController {
     public static function get_quiz($quiz_id) {
         global $conn;
         
-        $query = "SELECT * FROM quizzes WHERE id = ?";
+        $query = "SELECT * FROM quizzes WHERE id = ? AND is_active = 1";
         $stmt = $conn->prepare($query);
         $stmt->bind_param("i", $quiz_id);
         $stmt->execute();
@@ -144,10 +144,11 @@ class QuizController {
             
             $percentage = $total_points > 0 ? ($score / $total_points) * 100 : 0;
             $passed = $percentage >= $passing_score ? 1 : 0;
+            $grade = self::map_grade($percentage);
             
-            $update_query = "UPDATE quiz_results SET score = ?, total_points = ?, percentage = ?, passed = ? WHERE id = ?";
+            $update_query = "UPDATE quiz_results SET score = ?, total_points = ?, percentage = ?, grade = ?, passed = ? WHERE id = ?";
             $update_stmt = $conn->prepare($update_query);
-            $update_stmt->bind_param("dddii", $score, $total_points, $percentage, $passed, $result_id);
+            $update_stmt->bind_param("dddiii", $score, $total_points, $percentage, $grade, $passed, $result_id);
             $update_stmt->execute();
             
             $conn->commit();
@@ -158,11 +159,43 @@ class QuizController {
                 'score' => $score,
                 'total' => $total_points,
                 'percentage' => round($percentage, 2),
+                'grade' => $grade,
                 'passed' => $passed
             ];
         } catch (Exception $e) {
             $conn->rollback();
             return ['success' => false, 'message' => 'Error submitting quiz'];
         }
+    }
+
+    private static function map_grade($percentage) {
+        if ($percentage >= 90) {
+            return 10;
+        }
+        if ($percentage >= 85) {
+            return 9;
+        }
+        if ($percentage >= 75) {
+            return 8;
+        }
+        if ($percentage >= 65) {
+            return 7;
+        }
+        if ($percentage >= 55) {
+            return 6;
+        }
+        if ($percentage >= 45) {
+            return 5;
+        }
+        if ($percentage >= 35) {
+            return 4;
+        }
+        if ($percentage >= 25) {
+            return 3;
+        }
+        if ($percentage >= 15) {
+            return 2;
+        }
+        return 1;
     }
 }

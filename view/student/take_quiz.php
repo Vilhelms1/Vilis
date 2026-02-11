@@ -1,10 +1,10 @@
 <?php
-require_once __DIR__ . '/../config/database.php';
-require_once __DIR__ . '/../controllers/AuthController.php';
-require_once __DIR__ . '/../controllers/QuizController.php';
+require_once __DIR__ . '/../../configs__(iestatījumi)/database.php';
+require_once __DIR__ . '/../../controlers__(loģistika)/autenController.php';
+require_once __DIR__ . '/../../controlers__(loģistika)/QuizController.php';
 
 if (!AuthController::is_logged_in()) {
-    header('Location: login.php');
+    header('Location: ../login-reg.php');
     exit();
 }
 
@@ -20,7 +20,7 @@ if (!$quiz) {
 }
 
 // Verify student is enrolled in the class
-$enroll_check = "SELECT * FROM class_enrollments WHERE class_id = ? AND user_id = ?";
+$enroll_check = "SELECT * FROM class_enrollments WHERE class_id = ? AND student_id = ?";
 $enroll_stmt = $conn->prepare($enroll_check);
 $enroll_stmt->bind_param("ii", $quiz['class_id'], $user_id);
 $enroll_stmt->execute();
@@ -35,14 +35,15 @@ shuffle($questions);
 ?>
 
 <!DOCTYPE html>
-<html lang="en">
+<html lang="lv">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo htmlspecialchars($quiz['title']); ?> - ApgūstiVairāk</title>
-    <link rel="stylesheet" href="../assets/css/style.css">
+    <link rel="stylesheet" href="../../assets/css/modern-style.css">
+    <script defer src="../../assets/js/app.js"></script>
 </head>
-<body class="quiz-page">
+<body class="quiz-page" data-theme="light" data-lang="lv">
     <div class="quiz-header">
         <h1><?php echo htmlspecialchars($quiz['title']); ?></h1>
         <div class="quiz-timer" id="timer">

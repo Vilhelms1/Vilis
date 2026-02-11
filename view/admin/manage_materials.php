@@ -2,12 +2,13 @@
 require_once __DIR__ . '/../../configs__(iestatījumi)/database.php';
 require_once __DIR__ . '/../../controlers__(loģistika)/autenController.php';
 
-if (!AuthController::is_logged_in() || !AuthController::is_admin()) {
+if (!AuthController::is_logged_in() || (!AuthController::is_admin() && !AuthController::is_teacher())) {
     header('Location: ../login-reg.php');
     exit();
 }
 
-$admin_id = $_SESSION['user_id'];
+$user_id = $_SESSION['user_id'];
+$is_admin = AuthController::is_admin();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     header('Content-Type: application/json');
@@ -30,9 +31,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit();
         }
 
-        $verify_query = "SELECT id FROM classes WHERE id = ? AND admin_id = ?";
+        $verify_query = $is_admin
+            ? "SELECT id FROM classes WHERE id = ?"
+            : "SELECT id FROM classes WHERE id = ? AND teacher_id = ?";
         $verify_stmt = $conn->prepare($verify_query);
-        $verify_stmt->bind_param("ii", $class_id, $admin_id);
+        if ($is_admin) {
+            $verify_stmt->bind_param("i", $class_id);
+        } else {
+            $verify_stmt->bind_param("ii", $class_id, $user_id);
+        }
         $verify_stmt->execute();
 
         if ($verify_stmt->get_result()->num_rows === 0) {
@@ -40,7 +47,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit();
         }
 
-        if (!isset($_FILES['document']) || $_FILES['document']['error'] !== UPLOAD_ERR_OK) {
+        if (!isset($_FILES['document'])) {
             echo json_encode(['success' => false, 'message' => 'File upload failed']);
             exit();
         }
@@ -51,30 +58,58 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit();
         }
 
-        $original_name = $_FILES['document']['name'];
-        $extension = strtolower(pathinfo($original_name, PATHINFO_EXTENSION));
-        $base_name = trim(pathinfo($original_name, PATHINFO_FILENAME));
-        $title = $base_name !== '' ? $base_name : 'Document';
+        $names = $_FILES['document']['name'];
+        $tmp_names = $_FILES['document']['tmp_name'];
+        $errors = $_FILES['document']['error'];
 
-        $safe_token = bin2hex(random_bytes(8));
-        $file_name = $safe_token . ($extension ? '.' . $extension : '');
-        $target_path = $upload_dir . $file_name;
-
-        if (!move_uploaded_file($_FILES['document']['tmp_name'], $target_path)) {
-            echo json_encode(['success' => false, 'message' => 'Could not save file']);
-            exit();
+        if (!is_array($names)) {
+            $names = [$names];
+            $tmp_names = [$tmp_names];
+            $errors = [$errors];
         }
 
-        $insert_query = "INSERT INTO class_materials (class_id, title, file_path, file_type, uploaded_by) VALUES (?, ?, ?, ?, ?)";
+        $insert_query = "INSERT INTO class_materials (class_id, title, file_path, file_type, material_type, uploaded_by) VALUES (?, ?, ?, ?, ?, ?)";
         $insert_stmt = $conn->prepare($insert_query);
-        $file_type = $extension !== '' ? $extension : 'file';
-        $insert_stmt->bind_param("isssi", $class_id, $title, $file_name, $file_type, $admin_id);
+        $saved_count = 0;
+        $failed_count = 0;
 
-        if ($insert_stmt->execute()) {
+        foreach ($names as $index => $original_name) {
+            if (($errors[$index] ?? UPLOAD_ERR_OK) !== UPLOAD_ERR_OK) {
+                $failed_count++;
+                continue;
+            }
+
+            $extension = strtolower(pathinfo($original_name, PATHINFO_EXTENSION));
+            $base_name = trim(pathinfo($original_name, PATHINFO_FILENAME));
+            $title = $base_name !== '' ? $base_name : 'Document';
+
+            $safe_token = bin2hex(random_bytes(8));
+            $file_name = $safe_token . ($extension ? '.' . $extension : '');
+            $target_path = $upload_dir . $file_name;
+
+            if (!move_uploaded_file($tmp_names[$index], $target_path)) {
+                $failed_count++;
+                continue;
+            }
+
+            $file_type = $extension !== '' ? $extension : 'file';
+            $material_type = in_array($extension, ['png', 'jpg', 'jpeg', 'gif', 'webp'], true) ? 'image' : 'document';
+            $insert_stmt->bind_param("issssi", $class_id, $title, $file_name, $file_type, $material_type, $user_id);
+
+            if ($insert_stmt->execute()) {
+                $saved_count++;
+            } else {
+                @unlink($target_path);
+                $failed_count++;
+            }
+        }
+
+        if ($saved_count > 0 && $failed_count === 0) {
             echo json_encode(['success' => true]);
+        } elseif ($saved_count > 0) {
+            echo json_encode(['success' => true, 'message' => 'Some files failed to upload']);
         } else {
-            @unlink($target_path);
-            echo json_encode(['success' => false, 'message' => 'Database insert failed']);
+            echo json_encode(['success' => false, 'message' => 'No files were uploaded']);
         }
         exit();
     }
@@ -87,9 +122,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit();
         }
 
-        $select_query = "SELECT cm.file_path FROM class_materials cm INNER JOIN classes c ON cm.class_id = c.id WHERE cm.id = ? AND c.admin_id = ?";
+        $select_query = $is_admin
+            ? "SELECT cm.file_path FROM class_materials cm INNER JOIN classes c ON cm.class_id = c.id WHERE cm.id = ?"
+            : "SELECT cm.file_path FROM class_materials cm INNER JOIN classes c ON cm.class_id = c.id WHERE cm.id = ? AND c.teacher_id = ?";
         $select_stmt = $conn->prepare($select_query);
-        $select_stmt->bind_param("ii", $material_id, $admin_id);
+        if ($is_admin) {
+            $select_stmt->bind_param("i", $material_id);
+        } else {
+            $select_stmt->bind_param("ii", $material_id, $user_id);
+        }
         $select_stmt->execute();
         $material = $select_stmt->get_result()->fetch_assoc();
 
@@ -122,14 +163,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $class_id = $_GET['id'] ?? 0;
 
 // Verify admin owns this class
-$verify_query = "SELECT * FROM classes WHERE id = ? AND admin_id = ?";
+$verify_query = $is_admin
+    ? "SELECT * FROM classes WHERE id = ?"
+    : "SELECT * FROM classes WHERE id = ? AND teacher_id = ?";
 $verify_stmt = $conn->prepare($verify_query);
-$verify_stmt->bind_param("ii", $class_id, $admin_id);
+if ($is_admin) {
+    $verify_stmt->bind_param("i", $class_id);
+} else {
+    $verify_stmt->bind_param("ii", $class_id, $user_id);
+}
 $verify_stmt->execute();
 $class = $verify_stmt->get_result()->fetch_assoc();
 
 if (!$class) {
-    header('Location: admin_dashboard.php');
+    header('Location: ' . ($is_admin ? 'admin_dashboard.php' : '../teacher/teacher_dashboard.php'));
     exit();
 }
 
@@ -142,33 +189,40 @@ $materials = $materials_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 ?>
 
 <!DOCTYPE html>
-<html lang="en">
+<html lang="lv">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Manage Materials - ApgūstiVairāk</title>
-    <link rel="stylesheet" href="../../assets/css/style.css">
-       <link rel="stylesheet" href="../../assets/css/majaslapas-disange.css">
+    <link rel="stylesheet" href="../../assets/css/modern-style.css">
+    <script defer src="../../assets/js/app.js"></script>
 </head>
-<body>
-    <nav class="navbar">
+<body data-theme="light" data-lang="lv">
+    <nav class="navbar glass">
         <div class="nav-container">
-            <a href="admin_dashboard.php" class="nav-back">← Back</a>
-            <div class="nav-brand">Manage Class Materials</div>
-            <a href="../process_logout.php" class="btn btn-small">Logout</a>
+            <a href="<?php echo $is_admin ? 'admin_dashboard.php' : '../teacher/teacher_dashboard.php'; ?>" class="nav-back">← Back</a>
+            <div class="nav-brand">Materiāli</div>
+            <div class="nav-actions">
+                <button class="btn btn-ghost btn-small" data-lang-toggle>LV / EN</button>
+                <button class="btn btn-ghost btn-small" data-theme-toggle>◐</button>
+                <a href="../process_logout.php" class="btn btn-small">Logout</a>
+            </div>
         </div>
     </nav>
     
     <div class="container">
-        <div class="dashboard-header">
-            <h1><?php echo htmlspecialchars($class['name']); ?> - Study Materials</h1>
-            <button class="btn btn-primary" onclick="openModal('uploadModal')">📁 Upload Material</button>
+        <div class="page-header" style="margin-bottom: 1.5rem;">
+            <h1 class="page-title">Materiāli</h1>
+            <p class="page-subtitle"><?php echo htmlspecialchars($class['name']); ?> · Pievieno un pārvaldi materiālus</p>
+        </div>
+        <div class="flex gap-2" style="margin-bottom: 2rem;">
+            <button class="btn" onclick="openModal('uploadModal')">📁 Pievienot materiālu</button>
         </div>
         
         <div class="materials-list">
             <?php if (empty($materials)): ?>
                 <div class="empty-state">
-                    <p>No materials uploaded yet. Click "Upload Material" to add study documents.</p>
+                    Šeit vēl nav materiālu. Spied “Pievienot materiālu”, lai augšupielādētu failus.
                 </div>
             <?php else: ?>
                 <?php foreach ($materials as $material): ?>
@@ -177,40 +231,45 @@ $materials = $materials_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
                             <h4><?php echo htmlspecialchars($material['title']); ?></h4>
                             <span class="badge"><?php echo strtoupper($material['file_type']); ?></span>
                         </div>
-                        <p class="material-date">Uploaded: <?php echo date('M d, Y H:i', strtotime($material['created_at'])); ?></p>
+                        <p class="material-date">Pievienots: <?php echo date('d.m.Y H:i', strtotime($material['created_at'])); ?></p>
                         <div class="material-actions">
-                            <a href="../../uploads/<?php echo htmlspecialchars($material['file_path']); ?>" class="btn btn-secondary btn-small" download>Download</a>
-                            <button class="btn btn-danger btn-small" onclick="deleteMaterial(<?php echo $material['id']; ?>)">Delete</button>
+                            <a href="../../uploads/<?php echo htmlspecialchars($material['file_path']); ?>" class="btn btn-secondary btn-small" download>Lejupielādēt</a>
+                            <button class="btn btn-danger btn-small" onclick="deleteMaterial(<?php echo $material['id']; ?>)">Dzēst</button>
                         </div>
                     </div>
                 <?php endforeach; ?>
             <?php endif; ?>
         </div>
     </div>
-    git 
     <!-- Upload Modal -->
     <div id="uploadModal" class="modal">
         <div class="modal-content">
-            <span class="close" onclick="closeModal('uploadModal')">&times;</span>
-            <h2>Upload Study Material</h2>
-            <form id="uploadForm" enctype="multipart/form-data">
-                <input type="hidden" name="class_id" value="<?php echo $class_id; ?>">
-                <input type="hidden" name="action" value="upload_material">
-                
-                <div class="form-group">
-                    <label for="document">Select File</label>
-                    <input type="file" id="document" name="document" required accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip">
-                    <small>Allowed: PDF, DOC, DOCX, XLS, XLSX, PPT, PPTX, TXT, ZIP</small>
-                </div>
-                
-                <button type="submit" class="btn btn-primary">Upload</button>
-            </form>
+            <div class="modal-header" style="display: flex; align-items: center; gap: 0.75rem;">
+                <h2 style="margin: 0;">Pievienot mācību materiālu</h2>
+                <button type="button" class="modal-close" onclick="closeModal('uploadModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="uploadForm" enctype="multipart/form-data">
+                    <input type="hidden" name="class_id" value="<?php echo $class_id; ?>">
+                    <input type="hidden" name="action" value="upload_material">
+                    
+                    <div class="form-group">
+                        <label class="form-label" for="document">Izvēlies failu</label>
+                        <input class="form-input" type="file" id="document" name="document[]" multiple required accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip,.png,.jpg,.jpeg,.gif,.webp">
+                        <small class="text-muted">Atļauts: PDF, DOC, DOCX, XLS, XLSX, PPT, PPTX, TXT, ZIP, PNG, JPG, WEBP. Vari izvēlēties vairākus failus.</small>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('uploadModal')">Atcelt</button>
+                <button type="submit" form="uploadForm" class="btn">Augšupielādēt</button>
+            </div>
         </div>
     </div>
     
     <script>
-        function openModal(modalId) { document.getElementById(modalId).style.display = 'block'; }
-        function closeModal(modalId) { document.getElementById(modalId).style.display = 'none'; }
+        function openModal(modalId) { document.getElementById(modalId).classList.add('active'); }
+        function closeModal(modalId) { document.getElementById(modalId).classList.remove('active'); }
         
         document.getElementById('uploadForm').addEventListener('submit', function(e) {
             e.preventDefault();
@@ -224,13 +283,13 @@ $materials = $materials_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
                 if (d.success) {
                     location.reload();
                 } else {
-                    alert(d.message || 'Upload failed');
+                    alert(d.message || 'Augšupielāde neizdevās');
                 }
             });
         });
         
         function deleteMaterial(materialId) {
-            if (confirm('Delete this material?')) {
+            if (confirm('Dzēst šo materiālu?')) {
                 fetch('manage_materials.php', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
@@ -242,45 +301,5 @@ $materials = $materials_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
         }
     </script>
     
-    <style>
-        .materials-list {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-            gap: 20px;
-            margin-top: 20px;
-        }
-        
-        .material-item {
-            background: white;
-            padding: 20px;
-            border-radius: 12px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            border-left: 4px solid #6366f1;
-        }
-        
-        .material-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: start;
-            margin-bottom: 10px;
-        }
-        
-        .material-header h4 {
-            margin: 0;
-            color: #111827;
-        }
-        
-        .material-date {
-            color: #6b7280;
-            font-size: 13px;
-            margin: 10px 0;
-        }
-        
-        .material-actions {
-            display: flex;
-            gap: 10px;
-            margin-top: 15px;
-        }
-    </style>
 </body>
 </html>
