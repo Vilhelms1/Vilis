@@ -170,7 +170,7 @@ $teachers = $teachers_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
 $classes = ClassController::get_all_classes();
 
-$news_query = "SELECT id, title, published_at FROM school_news ORDER BY published_at DESC LIMIT 6";
+$news_query = "SELECT id, title, image_path, published_at FROM school_news ORDER BY published_at DESC LIMIT 6";
 $news_stmt = $conn->prepare($news_query);
 $news_stmt->execute();
 $news_items = $news_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
@@ -281,17 +281,21 @@ $news_items = $news_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
         <div id="news" class="tab-content">
             <div class="grid grid-2">
                 <?php foreach ($news_items as $news): ?>
-                    <div class="card slide-up">
-                        <div class="card-header">
-                            <h3 class="card-title" style="font-size: 1.1rem;"><?php echo htmlspecialchars($news['title']); ?></h3>
-                        </div>
-                        <div class="card-body">
-                            <p style="color: var(--text-tertiary); font-size: 0.9rem; margin: 0;">
-                                📅 <?php echo date('d.m.Y', strtotime($news['published_at'])); ?>
-                            </p>
-                        </div>
-                        <div class="card-footer">
-                            <button class="btn btn-danger" onclick="deleteNews(<?php echo $news['id']; ?>)">Dzēst</button>
+                    <?php $image_path = !empty($news['image_path']) ? BASE_URL . 'uploads/' . $news['image_path'] : BASE_URL . 'assets/image/picture.jpg'; ?>
+                    <div class="card slide-up news-item-card">
+                        <img class="news-thumb" src="<?php echo htmlspecialchars($image_path); ?>" alt="Jaunuma attēls">
+                        <div style="flex: 1;">
+                            <div class="card-header">
+                                <h3 class="card-title" style="font-size: 1.1rem;"><?php echo htmlspecialchars($news['title']); ?></h3>
+                            </div>
+                            <div class="card-body">
+                                <p style="color: var(--text-tertiary); font-size: 0.9rem; margin: 0;">
+                                    📅 <?php echo date('d.m.Y', strtotime($news['published_at'])); ?>
+                                </p>
+                            </div>
+                            <div class="card-footer">
+                                <button class="btn btn-danger" onclick="deleteNews(<?php echo $news['id']; ?>)">Dzēst</button>
+                            </div>
                         </div>
                     </div>
                 <?php endforeach; ?>
