@@ -44,12 +44,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit();
         }
 
+        $verify_query = "SELECT id FROM classes WHERE id = ? AND teacher_id = ?";
+        $verify_stmt = $conn->prepare($verify_query);
+        $verify_stmt->bind_param('ii', $class_id, $teacher_id);
+        $verify_stmt->execute();
+        if ($verify_stmt->get_result()->num_rows === 0) {
+            echo json_encode(['success' => false, 'message' => 'Klase nav atrasta vai nav tiesību dzēst.']);
+            exit();
+        }
+
         $delete_query = "DELETE FROM classes WHERE id = ? AND teacher_id = ?";
         $delete_stmt = $conn->prepare($delete_query);
         $delete_stmt->bind_param('ii', $class_id, $teacher_id);
-        $delete_stmt->execute();
+        $deleted = $delete_stmt->execute();
 
-        echo json_encode(['success' => $delete_stmt->affected_rows > 0]);
+        if (!$deleted) {
+            echo json_encode(['success' => false, 'message' => 'Neizdevās dzēst klasi.']);
+            exit();
+        }
+
+        echo json_encode(['success' => $delete_stmt->affected_rows > 0, 'message' => $delete_stmt->affected_rows > 0 ? null : 'Klase nav atrasta.']);
         exit();
     }
 
