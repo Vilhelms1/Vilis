@@ -59,7 +59,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $deleted = $delete_stmt->execute();
 
         if (!$deleted) {
-            echo json_encode(['success' => false, 'message' => 'Neizdevās dzēst klasi.']);
+            $error_message = $delete_stmt->error ?: $conn->error;
+            echo json_encode([
+                'success' => false,
+                'message' => 'Neizdevās dzēst klasi.',
+                'error' => $error_message
+            ]);
             exit();
         }
 
@@ -225,7 +230,8 @@ if ($news_stmt) {
                     if (d.success) {
                         location.reload();
                     } else {
-                        alert(d.message || 'Kļūda');
+                        const details = d.error ? ` (${d.error})` : '';
+                        alert((d.message || 'Kļūda') + details);
                     }
                 });
             }

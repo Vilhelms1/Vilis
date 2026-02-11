@@ -107,8 +107,8 @@ CREATE TABLE IF NOT EXISTS student_answers (
     answer_id INT,
     is_correct TINYINT DEFAULT 0,
     FOREIGN KEY (result_id) REFERENCES quiz_results(id) ON DELETE CASCADE,
-    FOREIGN KEY (question_id) REFERENCES questions(id),
-    FOREIGN KEY (answer_id) REFERENCES answers(id)
+    FOREIGN KEY (question_id) REFERENCES questions(id) ON DELETE CASCADE,
+    FOREIGN KEY (answer_id) REFERENCES answers(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS class_assignments (

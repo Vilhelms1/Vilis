@@ -51,7 +51,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $delete_stmt->bind_param('i', $class_id);
         $deleted = $delete_stmt->execute();
         if (!$deleted) {
-            echo json_encode(['success' => false, 'message' => 'Neizdevās dzēst klasi.']);
+            $error_message = $delete_stmt->error ?: $conn->error;
+            echo json_encode([
+                'success' => false,
+                'message' => 'Neizdevās dzēst klasi.',
+                'error' => $error_message
+            ]);
             exit();
         }
 
@@ -238,6 +243,59 @@ $news_items = $news_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
     <title>Admin Panelis - ApgūstiVairāk</title>
     <link rel="stylesheet" href="../../assets/css/modern-style.css">
     <script defer src="../../assets/js/app.js"></script>
+    <style>
+        .confirm-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(10, 12, 20, 0.6);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            padding: 1.5rem;
+        }
+        .confirm-overlay.active {
+            display: flex;
+        }
+        .confirm-box {
+            width: 100%;
+            max-width: 420px;
+            background: #0f1524;
+            color: #e9edf7;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+            padding: 1.5rem;
+        }
+        .confirm-title {
+            font-size: 1.1rem;
+            margin: 0 0 0.5rem;
+        }
+        .confirm-text {
+            margin: 0 0 1rem;
+            color: rgba(233, 237, 247, 0.75);
+            font-size: 0.95rem;
+        }
+        .confirm-input {
+            width: 100%;
+            padding: 0.75rem 0.9rem;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            background: rgba(255, 255, 255, 0.04);
+            color: #e9edf7;
+            margin-bottom: 0.75rem;
+        }
+        .confirm-error {
+            color: #ffb3b3;
+            font-size: 0.85rem;
+            min-height: 1.1rem;
+        }
+        .confirm-actions {
+            display: flex;
+            gap: 0.75rem;
+            justify-content: flex-end;
+        }
+    </style>
 </head>
 <body data-theme="light" data-lang="lv">
     <nav class="navbar">
@@ -487,7 +545,23 @@ $news_items = $news_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
         </div>
     </div>
 
+    <!-- Delete Confirm Modal -->
+    <div id="confirmOverlay" class="confirm-overlay" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+        <div class="confirm-box">
+            <h3 id="confirmTitle" class="confirm-title">Dzēšanas apstiprinājums</h3>
+            <p id="confirmText" class="confirm-text">Drošības nolūkos ieraksti DZEST, lai apstiprinātu dzēšanu.</p>
+            <input id="confirmInput" class="confirm-input" type="text" placeholder="Ieraksti DZEST">
+            <div id="confirmError" class="confirm-error"></div>
+            <div class="confirm-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeConfirmModal()">Atcelt</button>
+                <button type="button" class="btn btn-danger" onclick="confirmDelete()">Dzēst</button>
+            </div>
+        </div>
+    </div>
+
     <script>
+        let pendingDelete = null;
+
         function openModal(modalId) {
             document.getElementById(modalId).classList.add('active');
         }
@@ -496,17 +570,60 @@ $news_items = $news_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
             document.getElementById(modalId).classList.remove('active');
         }
 
+        function openConfirmModal(type, id) {
+            pendingDelete = {type, id};
+            document.getElementById('confirmError').textContent = '';
+            document.getElementById('confirmInput').value = '';
+            document.getElementById('confirmOverlay').classList.add('active');
+            document.getElementById('confirmInput').focus();
+        }
+
+        function closeConfirmModal() {
+            document.getElementById('confirmOverlay').classList.remove('active');
+            pendingDelete = null;
+        }
+
+        function confirmDelete() {
+            const input = document.getElementById('confirmInput').value.trim().toUpperCase();
+            if (input !== 'DZEST') {
+                document.getElementById('confirmError').textContent = 'Lūdzu ieraksti precīzi: DZEST';
+                return;
+            }
+
+            if (!pendingDelete) {
+                closeConfirmModal();
+                return;
+            }
+
+            if (pendingDelete.type === 'class') {
+                doDeleteClass(pendingDelete.id);
+            }
+
+            if (pendingDelete.type === 'teacher') {
+                doDeleteTeacher(pendingDelete.id);
+            }
+
+            closeConfirmModal();
+        }
+
         function deleteClass(classId) {
             if (confirm('Vai tiešām vēlies dzēst šo klasi?')) {
-                fetch('admin_dashboard.php', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({action: 'delete_class', class_id: classId})
-                }).then(r => r.json()).then(d => {
-                    if (d.success) location.reload();
-                    else alert(d.message || 'Kļūda');
-                });
+                openConfirmModal('class', classId);
             }
+        }
+
+        function doDeleteClass(classId) {
+            fetch('admin_dashboard.php', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({action: 'delete_class', class_id: classId})
+            }).then(r => r.json()).then(d => {
+                if (d.success) location.reload();
+                else {
+                    const details = d.error ? ` (${d.error})` : '';
+                    alert((d.message || 'Kļūda') + details);
+                }
+            });
         }
 
         function openAssignModal(classId) {
@@ -516,15 +633,19 @@ $news_items = $news_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
         function deleteTeacher(teacherId) {
             if (confirm('Vai tiešām vēlies dzēst šo skolotāju?')) {
-                fetch('admin_dashboard.php', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({action: 'delete_teacher', teacher_id: teacherId})
-                }).then(r => r.json()).then(d => {
-                    if (d.success) location.reload();
-                    else alert(d.message || 'Kļūda');
-                });
+                openConfirmModal('teacher', teacherId);
             }
+        }
+
+        function doDeleteTeacher(teacherId) {
+            fetch('admin_dashboard.php', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({action: 'delete_teacher', teacher_id: teacherId})
+            }).then(r => r.json()).then(d => {
+                if (d.success) location.reload();
+                else alert(d.message || 'Kļūda');
+            });
         }
 
         function deleteNews(newsId) {
