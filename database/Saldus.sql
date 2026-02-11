@@ -70,6 +70,7 @@ CREATE TABLE IF NOT EXISTS questions (
     id INT PRIMARY KEY AUTO_INCREMENT,
     quiz_id INT NOT NULL,
     question_text TEXT NOT NULL,
+    question_image VARCHAR(255) DEFAULT NULL,
     question_type ENUM('multiple_choice', 'true_false') DEFAULT 'multiple_choice',
     points INT DEFAULT 1,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

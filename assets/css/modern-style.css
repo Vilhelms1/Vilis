@@ -699,6 +699,30 @@ a {
     font-size: 0.9rem;
 }
 
+.question-image {
+    margin-top: 0.75rem;
+    width: 100%;
+    max-height: 320px;
+    object-fit: cover;
+    border-radius: 0.75rem;
+    border: 1px solid var(--border-color);
+    box-shadow: var(--shadow-sm);
+    background: var(--bg-secondary);
+}
+
+.image-preview {
+    margin-top: 0.75rem;
+}
+
+.question-image-preview {
+    width: 100%;
+    max-height: 240px;
+    object-fit: cover;
+    border-radius: 0.75rem;
+    border: 1px dashed var(--border-color);
+    background: var(--bg-secondary);
+}
+
 .answers-group {
     display: grid;
     gap: 0.75rem;

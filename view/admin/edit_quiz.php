@@ -31,6 +31,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $question_type = $_POST['question_type'] ?? 'multiple_choice';
         $points = (int)($_POST['points'] ?? 1);
         $answers = json_decode($_POST['answers'] ?? '[]', true);
+        $question_image = null;
 
         if ($quiz_id <= 0 || $question_text === '' || !is_array($answers) || count($answers) < 2) {
             echo json_encode(['success' => false, 'message' => 'Question and at least two answers are required']);
@@ -66,7 +67,58 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit();
         }
 
-        $result = QuizController::add_question($quiz_id, $question_text, $question_type, $points);
+        if (!empty($_FILES['question_image']['name'])) {
+            $upload = $_FILES['question_image'];
+            if ($upload['error'] !== UPLOAD_ERR_OK) {
+                echo json_encode(['success' => false, 'message' => 'Neizdevās augšupielādēt attēlu']);
+                exit();
+            }
+
+            if ($upload['size'] > 5 * 1024 * 1024) {
+                echo json_encode(['success' => false, 'message' => 'Attēls ir pārāk liels (max 5MB)']);
+                exit();
+            }
+
+            $extension = strtolower(pathinfo($upload['name'], PATHINFO_EXTENSION));
+            $allowed_ext = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+            if (!in_array($extension, $allowed_ext, true)) {
+                echo json_encode(['success' => false, 'message' => 'Atļautie attēlu formāti: JPG, PNG, GIF, WEBP']);
+                exit();
+            }
+
+            $mime = null;
+            if (class_exists('finfo')) {
+                $finfo = new finfo(FILEINFO_MIME_TYPE);
+                $mime = $finfo->file($upload['tmp_name']);
+            } elseif (function_exists('mime_content_type')) {
+                $mime = mime_content_type($upload['tmp_name']);
+            }
+
+            if ($mime) {
+                $allowed_mime = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+                if (!in_array($mime, $allowed_mime, true)) {
+                    echo json_encode(['success' => false, 'message' => 'Nederīgs attēla MIME tips']);
+                    exit();
+                }
+            }
+
+            $upload_dir = __DIR__ . '/../../uploads/quiz_questions';
+            if (!is_dir($upload_dir)) {
+                mkdir($upload_dir, 0755, true);
+            }
+
+            $filename = 'q_' . $quiz_id . '_' . bin2hex(random_bytes(8)) . '.' . $extension;
+            $target = $upload_dir . '/' . $filename;
+
+            if (!move_uploaded_file($upload['tmp_name'], $target)) {
+                echo json_encode(['success' => false, 'message' => 'Neizdevās saglabāt attēlu']);
+                exit();
+            }
+
+            $question_image = 'uploads/quiz_questions/' . $filename;
+        }
+
+        $result = QuizController::add_question($quiz_id, $question_text, $question_type, $points, $question_image);
         if (!$result['success']) {
             echo json_encode($result);
             exit();
@@ -93,6 +145,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit();
         }
 
+        $image_query = $is_admin
+            ? "SELECT q.question_image FROM questions q INNER JOIN quizzes z ON q.quiz_id = z.id WHERE q.id = ?"
+            : "SELECT q.question_image FROM questions q INNER JOIN quizzes z ON q.quiz_id = z.id WHERE q.id = ? AND z.created_by = ?";
+        $image_stmt = $conn->prepare($image_query);
+        if ($is_admin) {
+            $image_stmt->bind_param("i", $question_id);
+        } else {
+            $image_stmt->bind_param("ii", $question_id, $user_id);
+        }
+        $image_stmt->execute();
+        $image_row = $image_stmt->get_result()->fetch_assoc();
+        if (!$image_row) {
+            echo json_encode(['success' => false, 'message' => 'Question not found']);
+            exit();
+        }
+
         $delete_query = $is_admin
             ? "DELETE q FROM questions q INNER JOIN quizzes z ON q.quiz_id = z.id WHERE q.id = ?"
             : "DELETE q FROM questions q INNER JOIN quizzes z ON q.quiz_id = z.id WHERE q.id = ? AND z.created_by = ?";
@@ -105,6 +173,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $delete_stmt->execute();
 
         if ($delete_stmt->affected_rows > 0) {
+            $image_path = $image_row['question_image'] ?? '';
+            if ($image_path && strpos($image_path, 'uploads/quiz_questions/') === 0) {
+                $full_path = __DIR__ . '/../../' . $image_path;
+                if (is_file($full_path)) {
+                    unlink($full_path);
+                }
+            }
             echo json_encode(['success' => true]);
         } else {
             echo json_encode(['success' => false, 'message' => 'Question not found']);
@@ -171,6 +246,9 @@ $quiz = QuizController::get_quiz($quiz_id);
                             <span class="badge"><?php echo $question['points']; ?> pts</span>
                         </div>
                         <p><?php echo htmlspecialchars($question['question_text']); ?></p>
+                        <?php if (!empty($question['question_image'])): ?>
+                            <img class="question-image" src="../../<?php echo htmlspecialchars($question['question_image']); ?>" alt="Jautājuma attēls">
+                        <?php endif; ?>
                         
                         <div class="answers-list">
                             <?php foreach ($question['answers'] as $answer): ?>
@@ -198,12 +276,18 @@ $quiz = QuizController::get_quiz($quiz_id);
                 <button type="button" class="modal-close" onclick="closeModal('addQuestionModal')">&times;</button>
             </div>
             <div class="modal-body">
-                <form id="questionForm" method="POST" action="edit_quiz.php?id=<?php echo $quiz_id; ?>">
+                <form id="questionForm" method="POST" action="edit_quiz.php?id=<?php echo $quiz_id; ?>" enctype="multipart/form-data">
                     <input type="hidden" name="quiz_id" value="<?php echo $quiz_id; ?>">
                     
                     <div class="form-group">
                         <label class="form-label" for="question_text">Jautājums</label>
                         <textarea class="form-textarea" id="question_text" name="question_text" rows="3" required></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="question_image">Jautājuma attēls (nav obligāts)</label>
+                        <input class="form-input" type="file" id="question_image" name="question_image" accept="image/*">
+                        <div class="image-preview" id="questionImagePreview"></div>
                     </div>
                     
                     <div class="form-row">
@@ -269,6 +353,23 @@ $quiz = QuizController::get_quiz($quiz_id);
             }
         }
         
+        const imageInput = document.getElementById('question_image');
+        const imagePreview = document.getElementById('questionImagePreview');
+
+        if (imageInput && imagePreview) {
+            imageInput.addEventListener('change', function() {
+                imagePreview.innerHTML = '';
+                const file = this.files && this.files[0];
+                if (!file) return;
+
+                const img = document.createElement('img');
+                img.className = 'question-image-preview';
+                img.alt = 'Attēla priekšskats';
+                img.src = URL.createObjectURL(file);
+                imagePreview.appendChild(img);
+            });
+        }
+
         // Handle question form submission
         document.getElementById('questionForm').addEventListener('submit', function(e) {
             e.preventDefault();
@@ -285,15 +386,23 @@ $quiz = QuizController::get_quiz($quiz_id);
             formData.append('answers', JSON.stringify(answers));
             formData.append('action', 'add_question');
             
-            fetch('edit_quiz.php', {
+            fetch('edit_quiz.php?id=<?php echo $quiz_id; ?>', {
                 method: 'POST',
                 body: formData
-            }).then(r => r.json()).then(d => {
-                if (d.success) {
-                    location.reload();
-                } else {
-                    alert(d.message || 'Kļūda');
+            }).then(async r => {
+                const text = await r.text();
+                try {
+                    const d = JSON.parse(text);
+                    if (d.success) {
+                        location.reload();
+                    } else {
+                        alert(d.message || 'Kļūda');
+                    }
+                } catch (err) {
+                    alert('Kļūda: ' + text.slice(0, 200));
                 }
+            }).catch(err => {
+                alert('Kļūda: ' + err.message);
             });
         });
     </script>

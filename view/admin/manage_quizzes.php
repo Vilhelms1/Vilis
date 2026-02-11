@@ -35,6 +35,57 @@ if (!$class) {
     exit();
 }
 
+$error_message = null;
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $action = $_POST['action'] ?? null;
+
+    if ($action === 'create_quiz') {
+        $title = trim($_POST['title'] ?? '');
+        $description = trim($_POST['description'] ?? '');
+        $time_limit = (int)($_POST['time_limit'] ?? 0);
+        $passing_score = (int)($_POST['passing_score'] ?? 60);
+        $show_leaderboard = isset($_POST['show_leaderboard']) ? 1 : 1;
+
+        if ($title === '') {
+            $error_message = 'Testa nosaukums ir obligāts.';
+        } elseif ($passing_score < 0 || $passing_score > 100) {
+            $error_message = 'Nokārtošanas slieksnis jābūt no 0 līdz 100.';
+        } else {
+            $result = QuizController::create_quiz($class_id, $title, $description, $user_id, $time_limit, $passing_score, $show_leaderboard);
+            if (!empty($result['success'])) {
+                header('Location: edit_quiz.php?id=' . $result['quiz_id']);
+                exit();
+            }
+            $error_message = $result['message'] ?? 'Kļūda veidojot testu.';
+        }
+    }
+
+    if ($action === 'delete_quiz') {
+        $quiz_id = (int)($_POST['quiz_id'] ?? 0);
+        if ($quiz_id <= 0) {
+            $error_message = 'Nederīgs testa ID.';
+        } else {
+            $delete_query = $is_admin
+                ? "DELETE FROM quizzes WHERE id = ? AND class_id = ?"
+                : "DELETE FROM quizzes WHERE id = ? AND class_id = ? AND created_by = ?";
+            $delete_stmt = $conn->prepare($delete_query);
+            if ($is_admin) {
+                $delete_stmt->bind_param('ii', $quiz_id, $class_id);
+            } else {
+                $delete_stmt->bind_param('iii', $quiz_id, $class_id, $user_id);
+            }
+            $delete_stmt->execute();
+
+            if ($delete_stmt->affected_rows > 0) {
+                header('Location: manage_quizzes.php?class_id=' . $class_id);
+                exit();
+            }
+            $error_message = 'Neizdevās dzēst testu.';
+        }
+    }
+}
+
 $quizzes = QuizController::get_class_quizzes($class_id);
 ?>
 
@@ -65,6 +116,11 @@ $quizzes = QuizController::get_class_quizzes($class_id);
             <h1 class="page-title">Testi</h1>
             <p class="page-subtitle">Pārvaldi testus klasei <?php echo htmlspecialchars($class['name']); ?>.</p>
         </div>
+        <?php if ($error_message): ?>
+            <div class="card" style="margin-bottom: 1.5rem; border-color: rgba(239, 68, 68, 0.4);">
+                <p class="text-muted" style="margin: 0; color: #dc2626;"><?php echo htmlspecialchars($error_message); ?></p>
+            </div>
+        <?php endif; ?>
         <div class="flex gap-2" style="margin-bottom: 2rem;">
             <button class="btn" onclick="openModal('createQuizModal')">+ Izveidot testu</button>
         </div>
@@ -88,7 +144,11 @@ $quizzes = QuizController::get_class_quizzes($class_id);
                     </div>
                     <div class="card-actions" style="margin-top: 1rem;">
                         <a href="edit_quiz.php?id=<?php echo $quiz['id']; ?>" class="btn btn-secondary">Rediģēt</a>
-                        <button class="btn btn-danger btn-small" onclick="deleteQuiz(<?php echo $quiz['id']; ?>)">Dzēst</button>
+                        <form method="POST" action="manage_quizzes.php?class_id=<?php echo $class_id; ?>" style="display: inline-flex;" onsubmit="return confirm('Dzēst šo testu? Šo darbību nevar atsaukt.');">
+                            <input type="hidden" name="action" value="delete_quiz">
+                            <input type="hidden" name="quiz_id" value="<?php echo $quiz['id']; ?>">
+                            <button type="submit" class="btn btn-danger btn-small">Dzēst</button>
+                        </form>
                     </div>
                 </div>
             <?php endforeach; ?>
@@ -103,8 +163,9 @@ $quizzes = QuizController::get_class_quizzes($class_id);
                 <button type="button" class="modal-close" onclick="closeModal('createQuizModal')">&times;</button>
             </div>
             <div class="modal-body">
-                <form id="createQuizForm">
+                <form id="createQuizForm" method="POST" action="manage_quizzes.php?class_id=<?php echo $class_id; ?>">
                     <input type="hidden" name="class_id" value="<?php echo $class_id; ?>">
+                    <input type="hidden" name="action" value="create_quiz">
                     
                     <div class="form-group">
                         <label class="form-label" for="quiz_title">Testa nosaukums</label>
@@ -140,47 +201,12 @@ $quizzes = QuizController::get_class_quizzes($class_id);
         function openModal(modalId) { document.getElementById(modalId).classList.add('active'); }
         function closeModal(modalId) { document.getElementById(modalId).classList.remove('active'); }
         
-        function deleteQuiz(quizId) {
-            if (confirm('Dzēst šo testu? Šo darbību nevar atsaukt.')) {
-                fetch('api/delete_quiz.php', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({quiz_id: quizId})
-                }).then(r => r.json()).then(d => {
-                    if (d.success) {
-                        location.reload();
-                    } else {
-                        alert(d.message || 'Kļūda');
-                    }
-                });
-            }
-        }
-        
         document.addEventListener('DOMContentLoaded', function() {
-            const form = document.getElementById('createQuizForm');
-            if (form) {
-                form.addEventListener('submit', function(e) {
-                    e.preventDefault();
-                    
-                    const formData = new FormData(this);
-                    
-                    fetch('api/create_quiz.php', {
-                        method: 'POST',
-                        body: formData
-                    })
-                    .then(r => r.json())
-                    .then(d => {
-                        if (d.success) {
-                            closeModal('createQuizModal');
-                            form.reset();
-                            location.reload();
-                        } else {
-                            alert(d.message || 'Kļūda');
-                        }
-                    })
-                    .catch(e => alert('Kļūda: ' + e.message));
-                });
-            }
+            window.onclick = function(event) {
+                if (event.target.classList.contains('modal')) {
+                    event.target.classList.remove('active');
+                }
+            };
         });
     </script>
 </body>

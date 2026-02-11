@@ -63,6 +63,9 @@ shuffle($questions);
                     <div class="question-wrapper">
                         <h3><?php echo ($index + 1) . '. ' . htmlspecialchars($question['question_text']); ?></h3>
                         <p class="question-meta"><?php echo $question['points']; ?> points</p>
+                        <?php if (!empty($question['question_image'])): ?>
+                            <img class="question-image" src="../../<?php echo htmlspecialchars($question['question_image']); ?>" alt="Jautājuma attēls">
+                        <?php endif; ?>
 
                         <div class="answers-group">
                             <?php foreach ($question['answers'] as $answer): ?>

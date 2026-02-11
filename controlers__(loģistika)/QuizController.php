@@ -18,12 +18,15 @@ class QuizController {
     }
     
     // Add question
-    public static function add_question($quiz_id, $question_text, $question_type, $points) {
+    public static function add_question($quiz_id, $question_text, $question_type, $points, $question_image = null) {
         global $conn;
         
-        $query = "INSERT INTO questions (quiz_id, question_text, question_type, points) VALUES (?, ?, ?, ?)";
+        $query = "INSERT INTO questions (quiz_id, question_text, question_type, points, question_image) VALUES (?, ?, ?, ?, ?)";
         $stmt = $conn->prepare($query);
-        $stmt->bind_param("issi", $quiz_id, $question_text, $question_type, $points);
+        if ($stmt === false) {
+            return ['success' => false, 'message' => 'DB prepare failed: ' . $conn->error];
+        }
+        $stmt->bind_param("issis", $quiz_id, $question_text, $question_type, $points, $question_image);
         
         if ($stmt->execute()) {
             return ['success' => true, 'question_id' => $stmt->insert_id];
