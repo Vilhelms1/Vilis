@@ -159,6 +159,56 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit();
     }
 
+    if ($action === 'delete_teacher') {
+        $teacher_id = (int)($_POST['teacher_id'] ?? ($payload['teacher_id'] ?? 0));
+
+        if ($teacher_id <= 0) {
+            echo json_encode(['success' => false, 'message' => 'Invalid teacher id']);
+            exit();
+        }
+
+        $teacher_query = "SELECT id FROM users WHERE id = ? AND role = 'teacher'";
+        $teacher_stmt = $conn->prepare($teacher_query);
+        $teacher_stmt->bind_param('i', $teacher_id);
+        $teacher_stmt->execute();
+        $teacher = $teacher_stmt->get_result()->fetch_assoc();
+
+        if (!$teacher) {
+            echo json_encode(['success' => false, 'message' => 'Teacher not found']);
+            exit();
+        }
+
+        $dependency_queries = [
+            'classes' => "SELECT COUNT(*) AS total FROM classes WHERE teacher_id = ?",
+            'materials' => "SELECT COUNT(*) AS total FROM class_materials WHERE uploaded_by = ?",
+            'quizzes' => "SELECT COUNT(*) AS total FROM quizzes WHERE created_by = ?",
+            'assignments' => "SELECT COUNT(*) AS total FROM class_assignments WHERE created_by = ?",
+            'news' => "SELECT COUNT(*) AS total FROM school_news WHERE created_by = ?"
+        ];
+
+        foreach ($dependency_queries as $query) {
+            $check_stmt = $conn->prepare($query);
+            $check_stmt->bind_param('i', $teacher_id);
+            $check_stmt->execute();
+            $count = $check_stmt->get_result()->fetch_assoc();
+            if (!empty($count['total'])) {
+                echo json_encode([
+                    'success' => false,
+                    'message' => 'Skolotāju nevar dzēst, kamēr ir piesaistītas klases vai materiāli.'
+                ]);
+                exit();
+            }
+        }
+
+        $delete_query = "DELETE FROM users WHERE id = ?";
+        $delete_stmt = $conn->prepare($delete_query);
+        $delete_stmt->bind_param('i', $teacher_id);
+        $delete_stmt->execute();
+
+        echo json_encode(['success' => $delete_stmt->affected_rows > 0]);
+        exit();
+    }
+
     echo json_encode(['success' => false, 'message' => 'Unknown action']);
     exit();
 }
@@ -266,8 +316,9 @@ $news_items = $news_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
                                 <tr>
                                     <td><?php echo htmlspecialchars($teacher['first_name'] . ' ' . $teacher['last_name']); ?></td>
                                     <td><?php echo htmlspecialchars($teacher['email']); ?></td>
-                                    <td>
+                                    <td class="table-actions">
                                         <a href="teacher_detail.php?id=<?php echo $teacher['id']; ?>" class="btn btn-secondary btn-small">Klases</a>
+                                        <button class="btn btn-danger btn-small" onclick="deleteTeacher(<?php echo $teacher['id']; ?>)">Dzēst</button>
                                     </td>
                                 </tr>
                             <?php endforeach; ?>
@@ -457,6 +508,19 @@ $news_items = $news_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
         function openAssignModal(classId) {
             document.getElementById('assign_class_id').value = classId;
             openModal('assignModal');
+        }
+
+        function deleteTeacher(teacherId) {
+            if (confirm('Vai tiešām vēlies dzēst šo skolotāju?')) {
+                fetch('admin_dashboard.php', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({action: 'delete_teacher', teacher_id: teacherId})
+                }).then(r => r.json()).then(d => {
+                    if (d.success) location.reload();
+                    else alert(d.message || 'Kļūda');
+                });
+            }
         }
 
         function deleteNews(newsId) {
