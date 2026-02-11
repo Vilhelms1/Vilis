@@ -223,10 +223,10 @@ $news_items = $news_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
         <div id="classes" class="tab-content active">
             <div class="grid grid-2">
                 <?php foreach ($classes as $class): ?>
-                    <div class="card slide-up">
+                    <div class="card slide-up class-card">
                         <div class="card-header">
                             <h3 class="card-title" style="font-size: 1.175rem;"><?php echo htmlspecialchars($class['name']); ?></h3>
-                            <span class="badge"><?php echo $class['student_count']; ?> 👥</span>
+                            <span class="badge"><?php echo $class['student_count']; ?> <span class="badge-icon">👥</span></span>
                         </div>
                         <div class="card-body">
                             <p style="color: var(--text-secondary); margin-bottom: 0.5rem;">
