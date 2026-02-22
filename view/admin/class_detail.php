@@ -32,7 +32,7 @@ if (!$class) {
 }
 
 // Get quizzes
-$quizzes = QuizController::get_class_quizzes($class_id);
+$quizzes = QuizController::get_class_quizzes($class_id, true);
 
 // Get class students
 $students = ClassController::get_class_students($class_id);

@@ -11,7 +11,7 @@ $user_id = $_SESSION['user_id'];
 $result_id = $_GET['result_id'] ?? 0;
 
 // Get quiz result
-$result_query = "SELECT qr.*, q.title, q.passing_score, q.class_id FROM quiz_results qr INNER JOIN quizzes q ON qr.quiz_id = q.id WHERE qr.id = ? AND qr.user_id = ?";
+$result_query = "SELECT qr.*, q.title, q.passing_score, q.class_id, q.max_attempts, q.available_until FROM quiz_results qr INNER JOIN quizzes q ON qr.quiz_id = q.id WHERE qr.id = ? AND qr.user_id = ?";
 $result_stmt = $conn->prepare($result_query);
 $result_stmt->bind_param("ii", $result_id, $user_id);
 $result_stmt->execute();
@@ -20,6 +20,34 @@ $quiz_result = $result_stmt->get_result()->fetch_assoc();
 if (!$quiz_result) {
     header('Location: student_dashboard.php');
     exit();
+}
+
+// Pārbaudīt, vai var atkārtot testu
+$can_retake = true;
+$retake_blocked_reason = null;
+
+// Pārbaudīt termiņu
+if ($quiz_result['available_until']) {
+    $available_until = strtotime($quiz_result['available_until']);
+    $now = time();
+    if ($now > $available_until) {
+        $can_retake = false;
+        $retake_blocked_reason = 'Termiņš ir beidzies';
+    }
+}
+
+// Pārbaudīt mēģinājumus
+if ($can_retake && $quiz_result['max_attempts'] > 0) {
+    $attempts_query = "SELECT COUNT(*) as attempts FROM quiz_results WHERE quiz_id = ? AND user_id = ?";
+    $attempts_stmt = $conn->prepare($attempts_query);
+    $attempts_stmt->bind_param("ii", $quiz_result['quiz_id'], $user_id);
+    $attempts_stmt->execute();
+    $attempts_result = $attempts_stmt->get_result()->fetch_assoc();
+    
+    if ($attempts_result['attempts'] >= $quiz_result['max_attempts']) {
+        $can_retake = false;
+        $retake_blocked_reason = 'Mēģinājumi izsmelti';
+    }
 }
 
 // Get student answers
@@ -98,8 +126,15 @@ $answers = $answers_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
             <?php endforeach; ?>
         </div>
         
-        <div class="action-buttons">
-            <a href="class_details.php?id=<?php echo $quiz_result['class_id']; ?>" class="btn btn-primary">Atpakaļ uz klasi</a>
+        <div class="action-buttons" style="display: flex; gap: 1rem; justify-content: center; margin-top: 2rem;">
+            <a href="class_details.php?id=<?php echo $quiz_result['class_id']; ?>" class="btn btn-secondary">← Atpakaļ uz klasi</a>
+            <?php if ($can_retake): ?>
+                <a href="take_quiz.php?quiz_id=<?php echo $quiz_result['quiz_id']; ?>" class="btn btn-primary">🔄 Atkārtot testu</a>
+            <?php else: ?>
+                <button class="btn" style="background-color: #6b7280; cursor: not-allowed; opacity: 0.6;" disabled title="<?php echo htmlspecialchars($retake_blocked_reason); ?>">
+                    ✓ Pabeigts<?php if ($retake_blocked_reason): ?> - <?php echo htmlspecialchars($retake_blocked_reason); ?><?php endif; ?>
+                </button>
+            <?php endif; ?>
         </div>
     </div>
 </body>

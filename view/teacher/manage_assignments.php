@@ -170,7 +170,13 @@ $assignments = $assignments_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
                     </div>
                     <div class="form-group">
                         <label class="form-label" for="assignment_due">Termiņš</label>
-                        <input class="form-input" type="datetime-local" id="assignment_due" name="due_at">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.5rem; align-items: end;">
+                            <input class="form-input" type="date" id="assignment_date" name="due_date" required>
+                            <input class="form-input" type="number" id="assignment_hour" name="due_hour" min="0" max="23" placeholder="Stunda (00-23)" style="text-align: center;">
+                            <input class="form-input" type="number" id="assignment_minute" name="due_minute" min="0" max="59" placeholder="Minūtes (00-59)" style="text-align: center;">
+                            <input type="hidden" id="assignment_due" name="due_at">
+                        </div>
+                        <small style="color: #666; margin-top: 0.25rem; display: block;">Piemēram: 22:00 = 10:00 vakara</small>
                     </div>
                     <label class="form-check">
                         <input type="checkbox" name="allow_submissions" checked>
@@ -188,11 +194,66 @@ $assignments = $assignments_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
     <script>
         function openModal(modalId) {
             document.getElementById(modalId).classList.add('active');
+            if (modalId === 'assignmentModal') {
+                initializeTimeFields();
+            }
         }
 
         function closeModal(modalId) {
             document.getElementById(modalId).classList.remove('active');
         }
+
+        function initializeTimeFields() {
+            const now = new Date();
+            
+            // Set today's date
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            document.getElementById('assignment_date').value = `${year}-${month}-${day}`;
+            
+            // Set current time
+            const hour = String(now.getHours()).padStart(2, '0');
+            const minute = String(now.getMinutes()).padStart(2, '0');
+            document.getElementById('assignment_hour').value = hour;
+            document.getElementById('assignment_minute').value = minute;
+            
+            updateDueAtField();
+        }
+
+        function updateDueAtField() {
+            const date = document.getElementById('assignment_date').value;
+            const hour = parseInt(document.getElementById('assignment_hour').value) || 0;
+            const minute = parseInt(document.getElementById('assignment_minute').value) || 0;
+            
+            if (!date) {
+                document.getElementById('assignment_due').value = '';
+                return;
+            }
+            
+            // Ensure valid ranges
+            let validHour = Math.max(0, Math.min(23, hour));
+            let validMinute = Math.max(0, Math.min(59, minute));
+            
+            const formattedHour = String(validHour).padStart(2, '0');
+            const formattedMinute = String(validMinute).padStart(2, '0');
+            const dateTime = `${date} ${formattedHour}:${formattedMinute}:00`;
+            
+            document.getElementById('assignment_due').value = dateTime;
+        }
+        
+        // Setup change listeners
+        document.getElementById('assignment_date').addEventListener('change', updateDueAtField);
+        document.getElementById('assignment_hour').addEventListener('input', updateDueAtField);
+        document.getElementById('assignment_hour').addEventListener('change', function() {
+            this.value = String(Math.max(0, Math.min(23, parseInt(this.value) || 0))).padStart(2, '0');
+            updateDueAtField();
+        });
+        document.getElementById('assignment_minute').addEventListener('input', updateDueAtField);
+        document.getElementById('assignment_minute').addEventListener('change', function() {
+            this.value = String(Math.max(0, Math.min(59, parseInt(this.value) || 0))).padStart(2, '0');
+            updateDueAtField();
+        });
 
         function deleteAssignment(assignmentId) {
             if (confirm('Dzēst šo uzdevumu?')) {
@@ -208,6 +269,7 @@ $assignments = $assignments_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
         document.getElementById('assignmentForm').addEventListener('submit', function(e) {
             e.preventDefault();
+            updateDueAtField();
             const formData = new FormData(this);
             fetch('manage_assignments.php?class_id=<?php echo $class_id; ?>', {
                 method: 'POST',

@@ -22,7 +22,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     header('Content-Type: application/json');
     $submission_id = (int)($_POST['submission_id'] ?? 0);
     $grade = isset($_POST['grade']) ? (int)$_POST['grade'] : null;
-    $feedback = trim($_POST['feedback'] ?? '');
 
     if ($submission_id <= 0) {
         echo json_encode(['success' => false, 'message' => 'Invalid submission']);
@@ -40,9 +39,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    $update_query = "UPDATE assignment_submissions SET grade = ?, feedback = ? WHERE id = ?";
+    $update_query = "UPDATE assignment_submissions SET grade = ? WHERE id = ?";
     $update_stmt = $conn->prepare($update_query);
-    $update_stmt->bind_param('isi', $grade, $feedback, $submission_id);
+    $update_stmt->bind_param('ii', $grade, $submission_id);
     $update_stmt->execute();
 
     echo json_encode(['success' => $update_stmt->affected_rows >= 0]);
@@ -101,6 +100,17 @@ $submissions = $submissions_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
             <span class="badge">Iesniegumi: <?php echo count($submissions); ?></span>
         </div>
 
+        <div style="margin-bottom: 1.5rem; display: flex; gap: 1rem; align-items: center; padding: 1rem; background: rgba(255,255,255,0.05); border-radius: 8px;">
+            <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; padding: 0.5rem 1rem; border-radius: 6px; transition: background 0.3s;">
+                <input type="radio" name="grade-type" value="grade" checked onchange="toggleGradeType('grade')" style="cursor: pointer;">
+                <span>⭐ Atzīme (1-10)</span>
+            </label>
+            <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; padding: 0.5rem 1rem; border-radius: 6px; transition: background 0.3s;">
+                <input type="radio" name="grade-type" value="percent" onchange="toggleGradeType('percent')" style="cursor: pointer;">
+                <span>📊 Procenti (0-100%)</span>
+            </label>
+        </div>
+
         <div class="card">
             <table class="table">
                 <thead>
@@ -109,7 +119,6 @@ $submissions = $submissions_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
                         <th>Fails</th>
                         <th>Iesniegts</th>
                         <th>Atzīme</th>
-                        <th>Atsauksme</th>
                         <th>Darbība</th>
                     </tr>
                 </thead>
@@ -119,8 +128,10 @@ $submissions = $submissions_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
                             <td><?php echo htmlspecialchars($submission['first_name'] . ' ' . $submission['last_name']); ?></td>
                             <td><a href="../../uploads/<?php echo htmlspecialchars($submission['file_path']); ?>" class="btn btn-secondary btn-small" download>Lejupielādēt</a></td>
                             <td><?php echo date('d.m.Y H:i', strtotime($submission['submitted_at'])); ?></td>
-                            <td><input type="number" min="1" max="10" value="<?php echo $submission['grade'] ?? ''; ?>" class="grade-input" data-submission-id="<?php echo $submission['id']; ?>"></td>
-                            <td><input type="text" value="<?php echo htmlspecialchars($submission['feedback'] ?? ''); ?>" class="feedback-input" data-submission-id="<?php echo $submission['id']; ?>"></td>
+                            <td>
+                                <input type="number" min="1" max="10" value="<?php echo $submission['grade'] ?? ''; ?>" class="grade-input form-input grade-mode" data-submission-id="<?php echo $submission['id']; ?>" style="max-width: 100px; text-align: center; padding: 0.75rem; font-size: 16px; font-weight: bold;" placeholder="1-10">
+                                <input type="number" min="0" max="100" value="" class="percent-input form-input percent-mode" data-submission-id="<?php echo $submission['id']; ?>" style="max-width: 100px; text-align: center; padding: 0.75rem; font-size: 16px; font-weight: bold; display: none;" placeholder="0-100%">
+                            </td>
                             <td><button class="btn btn-small" onclick="saveGrade(<?php echo $submission['id']; ?>)">Saglabāt</button></td>
                         </tr>
                     <?php endforeach; ?>
@@ -130,21 +141,112 @@ $submissions = $submissions_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
     </div>
 
     <script>
+        function convertGradeToPercent(grade) {
+            return grade ? Math.round((grade * 10)) : '';
+        }
+
+        function convertPercentToGrade(percent) {
+            return percent ? Math.round((percent / 10)) : '';
+        }
+
+        function toggleGradeType(type) {
+            const gradeInputs = document.querySelectorAll('.grade-input');
+            const percentInputs = document.querySelectorAll('.percent-input');
+            
+            gradeInputs.forEach(input => {
+                if (type === 'grade') {
+                    input.style.display = '';
+                    input.max = 10;
+                    input.focus();
+                } else {
+                    // Konvertēt atzīmi uz procentiem
+                    const grade = input.value;
+                    const submissionId = input.dataset.submissionId;
+                    const percentInput = document.querySelector(`.percent-input[data-submission-id="${submissionId}"]`);
+                    if (grade) {
+                        percentInput.value = convertGradeToPercent(grade);
+                    }
+                    input.style.display = 'none';
+                }
+            });
+            
+            percentInputs.forEach(input => {
+                if (type === 'percent') {
+                    input.style.display = '';
+                    input.max = 100;
+                    input.focus();
+                } else {
+                    // Konvertēt procentus uz atzīmi
+                    const percent = input.value;
+                    const submissionId = input.dataset.submissionId;
+                    const gradeInput = document.querySelector(`.grade-input[data-submission-id="${submissionId}"]`);
+                    if (percent) {
+                        gradeInput.value = convertPercentToGrade(percent);
+                    }
+                    input.style.display = 'none';
+                }
+            });
+        }
+
         function saveGrade(submissionId) {
-            const gradeInput = document.querySelector(`.grade-input[data-submission-id="${submissionId}"]`);
-            const feedbackInput = document.querySelector(`.feedback-input[data-submission-id="${submissionId}"]`);
+            const gradeType = document.querySelector('input[name="grade-type"]:checked').value;
+            let value = '';
+            
+            if (gradeType === 'grade') {
+                const gradeInput = document.querySelector(`.grade-input[data-submission-id="${submissionId}"]`);
+                value = parseInt(gradeInput.value) || '';
+                
+                if (value && (value < 1 || value > 10)) {
+                    alert('Atzīme jābūt no 1 līdz 10!');
+                    gradeInput.value = '';
+                    return;
+                }
+            } else {
+                const percentInput = document.querySelector(`.percent-input[data-submission-id="${submissionId}"]`);
+                value = parseInt(percentInput.value) || '';
+                
+                if (value && (value < 0 || value > 100)) {
+                    alert('Procenti jābūt no 0 līdz 100!');
+                    percentInput.value = '';
+                    return;
+                }
+            }
+            
             const formData = new FormData();
             formData.append('submission_id', submissionId);
-            formData.append('grade', gradeInput.value);
-            formData.append('feedback', feedbackInput.value);
+            formData.append('grade', value);
 
             fetch('assignment_submissions.php?id=<?php echo $assignment_id; ?>', {
                 method: 'POST',
                 body: formData
             }).then(r => r.json()).then(d => {
-                if (!d.success) alert(d.message || 'Error');
+                if (d.success) {
+                    alert('Atzīme saglabāta!');
+                } else {
+                    alert(d.message || 'Kļūda');
+                }
             });
         }
+
+        // Validācija reālā laikā
+        document.addEventListener('input', function(e) {
+            if (e.target.classList.contains('grade-input')) {
+                let val = parseInt(e.target.value) || 0;
+                if (val > 10) {
+                    e.target.value = 10;
+                } else if (val < 0) {
+                    e.target.value = '';
+                }
+            }
+            if (e.target.classList.contains('percent-input')) {
+                let val = parseInt(e.target.value) || 0;
+                if (val > 100) {
+                    e.target.value = 100;
+                } else if (val < 0) {
+                    e.target.value = '';
+                }
+            }
+        });
     </script>
 </body>
 </html>

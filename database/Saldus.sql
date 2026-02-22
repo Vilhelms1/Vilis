@@ -59,6 +59,8 @@ CREATE TABLE IF NOT EXISTS quizzes (
     time_limit INT DEFAULT 0,
     passing_score INT DEFAULT 60,
     show_leaderboard TINYINT DEFAULT 1,
+    status ENUM('draft', 'published', 'scheduled', 'archived') DEFAULT 'draft',
+    scheduled_at DATETIME DEFAULT NULL,
     is_active TINYINT DEFAULT 1,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -111,6 +113,17 @@ CREATE TABLE IF NOT EXISTS student_answers (
     FOREIGN KEY (answer_id) REFERENCES answers(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS quiz_attempt_overrides (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    quiz_id INT NOT NULL,
+    user_id INT NOT NULL,
+    extra_attempts INT DEFAULT 0,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_quiz_user (quiz_id, user_id),
+    FOREIGN KEY (quiz_id) REFERENCES quizzes(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS class_assignments (
     id INT PRIMARY KEY AUTO_INCREMENT,
     class_id INT NOT NULL,
@@ -157,6 +170,9 @@ CREATE INDEX idx_result_user ON quiz_results(user_id);
 CREATE INDEX idx_result_quiz ON quiz_results(quiz_id);
 CREATE INDEX idx_question_quiz ON questions(quiz_id);
 CREATE INDEX idx_answer_question ON answers(question_id);
+CREATE INDEX idx_quiz_status ON quizzes(status);
+CREATE INDEX idx_quiz_scheduled ON quizzes(scheduled_at);
 CREATE INDEX idx_assignment_class ON class_assignments(class_id);
 CREATE INDEX idx_submission_assignment ON assignment_submissions(assignment_id);
 CREATE INDEX idx_news_active ON school_news(is_active);
+CREATE INDEX idx_override_quiz_user ON quiz_attempt_overrides(quiz_id, user_id);

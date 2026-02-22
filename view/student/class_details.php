@@ -33,13 +33,25 @@ $class = $class_stmt->get_result()->fetch_assoc();
 $quizzes = QuizController::get_class_quizzes($class_id);
 
 // Get student's quiz results for this class
-$results_query = "SELECT q.id, q.title, MAX(qr.percentage) as best_score, COUNT(qr.id) as attempts FROM quizzes q LEFT JOIN quiz_results qr ON q.id = qr.quiz_id AND qr.user_id = ? WHERE q.class_id = ? GROUP BY q.id";
+$results_query = "SELECT q.id, q.title, q.max_attempts, q.available_until, COALESCE(qo.extra_attempts, 0) as extra_attempts, MAX(qr.percentage) as best_score, MAX(qr.passed) as passed, COUNT(qr.id) as attempts FROM quizzes q LEFT JOIN quiz_results qr ON q.id = qr.quiz_id AND qr.user_id = ? LEFT JOIN quiz_attempt_overrides qo ON q.id = qo.quiz_id AND qo.user_id = ? WHERE q.class_id = ? AND (q.status = 'published' OR (q.status = 'scheduled' AND q.scheduled_at <= NOW())) GROUP BY q.id";
 $results_stmt = $conn->prepare($results_query);
-$results_stmt->bind_param("ii", $user_id, $class_id);
-$results_stmt->execute();
+if ($results_stmt === false) {
+    $results_query = "SELECT q.id, q.title, q.max_attempts, q.available_until, 0 as extra_attempts, MAX(qr.percentage) as best_score, MAX(qr.passed) as passed, COUNT(qr.id) as attempts FROM quizzes q LEFT JOIN quiz_results qr ON q.id = qr.quiz_id AND qr.user_id = ? WHERE q.class_id = ? AND q.is_active = 1 GROUP BY q.id";
+    $results_stmt = $conn->prepare($results_query);
+}
+if ($results_stmt) {
+    if (strpos($results_query, 'quiz_attempt_overrides') !== false) {
+        $results_stmt->bind_param("iii", $user_id, $user_id, $class_id);
+    } else {
+        $results_stmt->bind_param("ii", $user_id, $class_id);
+    }
+    $results_stmt->execute();
+}
 $student_results = [];
-foreach ($results_stmt->get_result()->fetch_all(MYSQLI_ASSOC) as $result) {
-    $student_results[$result['id']] = $result;
+if ($results_stmt) {
+    foreach ($results_stmt->get_result()->fetch_all(MYSQLI_ASSOC) as $result) {
+        $student_results[$result['id']] = $result;
+    }
 }
 
 // Get class materials
@@ -135,8 +147,9 @@ $leaderboard = $leaderboard_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
                 <div class="grid grid-2">
                     <?php foreach ($quizzes as $quiz):
                         $result = $student_results[$quiz['id']] ?? null;
+                        $effective_max_attempts = (int)($quiz['max_attempts'] ?? 0) + (int)($result['extra_attempts'] ?? 0);
                     ?>
-                        <div class="card slide-up">
+                        <div class="card slide-up" data-quiz-id="<?php echo $quiz['id']; ?>" data-quiz-deadline="<?php echo $quiz['available_until'] ?? ''; ?>">
                             <div class="card-header">
                                 <h3 class="card-title" style="font-size: 1.1rem;">📝 <?php echo htmlspecialchars($quiz['title']); ?></h3>
                             </div>
@@ -148,7 +161,15 @@ $leaderboard = $leaderboard_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
                                 <div class="flex gap-2" style="margin-bottom: 1rem; flex-wrap: wrap;">
                                     <span class="badge">⏱️ <?php echo $quiz['time_limit'] > 0 ? $quiz['time_limit'] . ' min' : 'Nav limita'; ?></span>
                                     <span class="badge">❓ <?php echo (int)($quiz['question_count'] ?? 0); ?> jautājumi</span>
+                                    <?php if ($effective_max_attempts > 0): ?>
+                                        <span class="badge">🔢 <?php echo $effective_max_attempts; ?> mēģinājumi</span>
+                                    <?php endif; ?>
                                 </div>
+                                
+                                <!-- Deadline info updated by JavaScript in real-time -->
+                                <?php if ($quiz['available_until']): ?>
+                                    <div data-deadline-info></div>
+                                <?php endif; ?>
                                 
                                 <?php if ($result && $result['best_score']): ?>
                                     <div style="padding: 1rem; border-radius: 0.5rem; background: rgba(16, 185, 129, 0.1); margin-bottom: 1rem;">
@@ -163,9 +184,50 @@ $leaderboard = $leaderboard_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
                                 <?php endif; ?>
                             </div>
                             <div class="card-footer">
-                                <a href="take_quiz.php?quiz_id=<?php echo $quiz['id']; ?>" class="btn" style="width: 100%;">
-                                    <?php echo $result ? '↻ Atkārtot testu' : '▶️ Sākt testu'; ?>
-                                </a>
+                                <?php 
+                                    $can_retake = true;
+                                    $button_text = $result ? '↻ Atkārtot testu' : '▶️ Sākt testu';
+                                    $button_class = 'btn';
+                                    $button_disabled = false;
+                                    $disabled_reason = '';
+                                    
+                                    if ($result) {
+                                        // Pārbaudīt termiņu
+                                        if ($result['available_until']) {
+                                            $available_until = strtotime($result['available_until']);
+                                            $now = time();
+                                            if ($now > $available_until) {
+                                                $can_retake = false;
+                                                $button_text = '✓ Pabeigts - Termiņš beidzies';
+                                                $button_class = 'btn' . ' disabled-btn';
+                                                $button_disabled = true;
+                                                $disabled_reason = 'Pieejams līdz: ' . date('d.m.Y H:i', $available_until);
+                                            }
+                                        }
+                                        
+                                        // Pārbaudīt mēģinājumus
+                                        if ($can_retake && $effective_max_attempts > 0 && $result['attempts'] >= $effective_max_attempts) {
+                                            $can_retake = false;
+                                            $button_text = '✓ Pabeigts - Mēģinājumi izsmelti (' . $result['attempts'] . '/' . $effective_max_attempts . ')';
+                                            $button_class = 'btn' . ' disabled-btn';
+                                            $button_disabled = true;
+                                        }
+                                        
+                                        // Pārbaudīt, vai tests nokārtots
+                                        if ($can_retake && !$result['passed'] && $result['attempts'] > 0) {
+                                            $button_text = '↻ Atkārtot testu (' . $result['attempts'] . '/' . ($effective_max_attempts ?: '∞') . ')';
+                                        }
+                                    }
+                                ?>
+                                <?php if ($button_disabled): ?>
+                                    <button data-quiz-button class="<?php echo $button_class; ?>" style="width: 100%; cursor: not-allowed; opacity: 0.6;" disabled title="<?php echo $disabled_reason; ?>">
+                                        <?php echo $button_text; ?>
+                                    </button>
+                                <?php else: ?>
+                                    <a data-quiz-button href="take_quiz.php?quiz_id=<?php echo $quiz['id']; ?>" class="<?php echo $button_class; ?>" style="width: 100%; text-align: center; text-decoration: none;">
+                                        <?php echo $button_text; ?>
+                                    </a>
+                                <?php endif; ?>
                             </div>
                         </div>
                     <?php endforeach; ?>
@@ -332,6 +394,79 @@ $leaderboard = $leaderboard_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
                 event.target.classList.add('active');
             }
         }
+        
+        // Real-time deadline countdown and status update
+        function updateQuizDeadlines() {
+            document.querySelectorAll('.card[data-quiz-deadline]').forEach(card => {
+                const deadlineStr = card.getAttribute('data-quiz-deadline');
+                const quizId = card.getAttribute('data-quiz-id');
+                
+                if (!deadlineStr) return;
+                
+                // Parse deadline
+                const deadline = new Date(deadlineStr.replace(' ', 'T')).getTime();
+                const now = new Date().getTime();
+                const timeRemaining = deadline - now;
+                
+                // Find deadline info element
+                const deadlineInfo = card.querySelector('[data-deadline-info]');
+                const button = card.querySelector('[data-quiz-button]');
+                
+                if (!deadlineInfo) return;
+                
+                if (timeRemaining <= 0) {
+                    // Termiņš beidzies - mainīt uz "Pabeigts"
+                    deadlineInfo.style.display = 'block';
+                    deadlineInfo.style.padding = '0.75rem';
+                    deadlineInfo.style.borderRadius = '0.5rem';
+                    deadlineInfo.style.background = 'rgba(239, 68, 68, 0.1)';
+                    deadlineInfo.style.marginBottom = '1rem';
+                    deadlineInfo.style.borderLeft = '3px solid #ef4444';
+                    
+                    deadlineInfo.innerHTML = '<p style="margin: 0; color: var(--text-secondary); font-size: 0.9rem;">📅 Pieejams līdz: <strong>' + 
+                        new Date(deadline).toLocaleString('lv-LV', {year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'}) + 
+                        '</strong></p><p style="margin: 0.25rem 0 0; color: #ef4444; font-size: 0.85rem; font-weight: 600;">⛔ Termiņš beidzies</p>';
+                    
+                    if (button) {
+                        button.innerHTML = '✓ Pabeigts - Termiņš beidzies';
+                        button.disabled = true;
+                        button.style.opacity = '0.6';
+                        button.style.cursor = 'not-allowed';
+                        button.href = '';
+                        button.onclick = () => false;
+                    }
+                } else {
+                    // Termiņš vēl nav beidzies - atjaunināt atlikušo laiku
+                    deadlineInfo.style.display = 'block';
+                    deadlineInfo.style.padding = '0.75rem';
+                    deadlineInfo.style.borderRadius = '0.5rem';
+                    deadlineInfo.style.background = 'rgba(59, 130, 246, 0.1)';
+                    deadlineInfo.style.marginBottom = '1rem';
+                    deadlineInfo.style.borderLeft = '3px solid #3b82f6';
+                    
+                    const days = Math.floor(timeRemaining / (1000 * 60 * 60 * 24));
+                    const hours = Math.floor((timeRemaining % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                    const mins = Math.floor((timeRemaining % (1000 * 60 * 60)) / (1000 * 60));
+                    
+                    let timeText = '';
+                    if (days > 0) {
+                        timeText = days + ' d ' + hours + ' h';
+                    } else if (hours > 0) {
+                        timeText = hours + ' h ' + mins + ' min';
+                    } else {
+                        timeText = mins + ' min';
+                    }
+                    
+                    deadlineInfo.innerHTML = '<p style="margin: 0; color: var(--text-secondary); font-size: 0.9rem;">📅 Pieejams līdz: <strong>' + 
+                        new Date(deadline).toLocaleString('lv-LV', {year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'}) + 
+                        '</strong></p><p style="margin: 0.25rem 0 0; color: var(--text-tertiary); font-size: 0.85rem;">⏳ Atliek: ' + timeText + '</p>';
+                }
+            });
+        }
+        
+        // Atjaunināt deadlines ik sekundi
+        updateQuizDeadlines();
+        setInterval(updateQuizDeadlines, 1000);
     </script>
 </body>
 </html>

@@ -4,12 +4,22 @@ require_once __DIR__ . '/../configs__(iestatījumi)/database.php';
 class QuizController {
     
     // Create quiz
-    public static function create_quiz($class_id, $title, $description, $created_by, $time_limit, $passing_score, $show_leaderboard) {
+    public static function create_quiz($class_id, $title, $description, $created_by, $time_limit, $passing_score, $show_leaderboard, $max_attempts = 0, $available_until = null, $status = 'draft', $scheduled_at = null) {
         global $conn;
+        $is_active = $status === 'published' ? 1 : 0;
         
-        $query = "INSERT INTO quizzes (class_id, title, description, created_by, time_limit, passing_score, show_leaderboard) VALUES (?, ?, ?, ?, ?, ?, ?)";
+        $query = "INSERT INTO quizzes (class_id, title, description, created_by, time_limit, passing_score, show_leaderboard, max_attempts, available_until, status, scheduled_at, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         $stmt = $conn->prepare($query);
-        $stmt->bind_param("issiiii", $class_id, $title, $description, $created_by, $time_limit, $passing_score, $show_leaderboard);
+        if ($stmt === false) {
+            $query = "INSERT INTO quizzes (class_id, title, description, created_by, time_limit, passing_score, show_leaderboard, max_attempts, available_until, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+            $stmt = $conn->prepare($query);
+            if ($stmt === false) {
+                return ['success' => false, 'message' => 'DB prepare failed: ' . $conn->error];
+            }
+            $stmt->bind_param("issiiiiisi", $class_id, $title, $description, $created_by, $time_limit, $passing_score, $show_leaderboard, $max_attempts, $available_until, $is_active);
+        } else {
+            $stmt->bind_param("issiiiiisssi", $class_id, $title, $description, $created_by, $time_limit, $passing_score, $show_leaderboard, $max_attempts, $available_until, $status, $scheduled_at, $is_active);
+        }
         
         if ($stmt->execute()) {
             return ['success' => true, 'quiz_id' => $stmt->insert_id];
@@ -46,27 +56,56 @@ class QuizController {
     }
     
     // Get all quizzes for a class
-    public static function get_class_quizzes($class_id) {
+    public static function get_class_quizzes($class_id, $include_inactive = false) {
         global $conn;
-        
+        $active_clause = $include_inactive ? '' : " AND (q.status = 'published' OR (q.status = 'scheduled' AND q.scheduled_at <= NOW()))";
         $query = "SELECT q.*, 
+                    (SELECT COUNT(*) FROM quiz_results WHERE quiz_id = q.id) as attempts,
+                    (SELECT COUNT(*) FROM questions WHERE quiz_id = q.id) as question_count
+                  FROM quizzes q 
+                  WHERE q.class_id = ?" . $active_clause . "
+                  ORDER BY q.created_at DESC";
+        $stmt = $conn->prepare($query);
+        if ($stmt === false) {
+            $fallback = $include_inactive
+                ? "SELECT q.*, 
+                    (SELECT COUNT(*) FROM quiz_results WHERE quiz_id = q.id) as attempts,
+                    (SELECT COUNT(*) FROM questions WHERE quiz_id = q.id) as question_count
+                  FROM quizzes q 
+                  WHERE q.class_id = ?
+                  ORDER BY q.created_at DESC"
+                : "SELECT q.*, 
                     (SELECT COUNT(*) FROM quiz_results WHERE quiz_id = q.id) as attempts,
                     (SELECT COUNT(*) FROM questions WHERE quiz_id = q.id) as question_count
                   FROM quizzes q 
                   WHERE q.class_id = ? AND q.is_active = 1
                   ORDER BY q.created_at DESC";
-        $stmt = $conn->prepare($query);
+            $stmt = $conn->prepare($fallback);
+        }
+        if ($stmt === false) {
+            return [];
+        }
         $stmt->bind_param("i", $class_id);
         $stmt->execute();
         return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
     }
     
     // Get quiz with questions and answers
-    public static function get_quiz($quiz_id) {
+    public static function get_quiz($quiz_id, $include_inactive = false) {
         global $conn;
-        
-        $query = "SELECT * FROM quizzes WHERE id = ? AND is_active = 1";
+        $query = $include_inactive
+            ? "SELECT * FROM quizzes WHERE id = ?"
+            : "SELECT * FROM quizzes WHERE id = ? AND (status = 'published' OR (status = 'scheduled' AND scheduled_at <= NOW()))";
         $stmt = $conn->prepare($query);
+        if ($stmt === false) {
+            $fallback = $include_inactive
+                ? "SELECT * FROM quizzes WHERE id = ?"
+                : "SELECT * FROM quizzes WHERE id = ? AND is_active = 1";
+            $stmt = $conn->prepare($fallback);
+        }
+        if ($stmt === false) {
+            return null;
+        }
         $stmt->bind_param("i", $quiz_id);
         $stmt->execute();
         $quiz = $stmt->get_result()->fetch_assoc();

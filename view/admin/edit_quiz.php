@@ -25,6 +25,87 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
+    if ($action === 'update_quiz_details') {
+        $quiz_id = (int)($_POST['quiz_id'] ?? 0);
+        $title = trim($_POST['title'] ?? '');
+        $description = trim($_POST['description'] ?? '');
+        $time_limit = (int)($_POST['time_limit'] ?? 0);
+        $passing_score = (int)($_POST['passing_score'] ?? 60);
+        $max_attempts = (int)($_POST['max_attempts'] ?? 0);
+        $status = $_POST['status'] ?? 'draft';
+        $available_until = $_POST['available_until'] ?? null;
+        if ($available_until !== null && $available_until !== '') {
+            $available_until = str_replace('T', ' ', $available_until) . ':00';
+        } else {
+            $available_until = null;
+        }
+
+        $allowed_status = ['draft', 'published'];
+        if (!in_array($status, $allowed_status, true)) {
+            echo json_encode(['success' => false, 'message' => 'Nederīgs statuss']);
+            exit();
+        }
+
+        if ($quiz_id <= 0 || $title === '') {
+            echo json_encode(['success' => false, 'message' => 'Quiz ID and title required']);
+            exit();
+        }
+
+        // Verify ownership
+        $verify_query = $is_admin
+            ? "SELECT id FROM quizzes WHERE id = ?"
+            : "SELECT id FROM quizzes WHERE id = ? AND created_by = ?";
+        $verify_stmt = $conn->prepare($verify_query);
+        if ($is_admin) {
+            $verify_stmt->bind_param("i", $quiz_id);
+        } else {
+            $verify_stmt->bind_param("ii", $quiz_id, $user_id);
+        }
+        $verify_stmt->execute();
+        if ($verify_stmt->get_result()->num_rows === 0) {
+            echo json_encode(['success' => false, 'message' => 'Not authorized']);
+            exit();
+        }
+
+        if ($status === 'published') {
+            $count_query = "SELECT COUNT(*) as total FROM questions WHERE quiz_id = ?";
+            $count_stmt = $conn->prepare($count_query);
+            $count_stmt->bind_param('i', $quiz_id);
+            $count_stmt->execute();
+            $count_row = $count_stmt->get_result()->fetch_assoc();
+            if ((int)($count_row['total'] ?? 0) === 0) {
+                echo json_encode(['success' => false, 'message' => 'Pirms publicēšanas pievieno vismaz vienu jautājumu.']);
+                exit();
+            }
+        }
+
+        $is_active = $status === 'published' ? 1 : 0;
+        $update_query = "UPDATE quizzes SET title = ?, description = ?, time_limit = ?, passing_score = ?, max_attempts = ?, available_until = ?, status = ?, is_active = ? WHERE id = ?";
+        $update_stmt = $conn->prepare($update_query);
+        if ($update_stmt === false) {
+            $update_query = "UPDATE quizzes SET title = ?, description = ?, time_limit = ?, passing_score = ?, max_attempts = ?, available_until = ?, is_active = ? WHERE id = ?";
+            $update_stmt = $conn->prepare($update_query);
+        }
+
+        if ($update_stmt === false) {
+            echo json_encode(['success' => false, 'message' => $conn->error]);
+            exit();
+        }
+
+        if (strpos($update_query, 'status') !== false) {
+            $update_stmt->bind_param("ssiiissii", $title, $description, $time_limit, $passing_score, $max_attempts, $available_until, $status, $is_active, $quiz_id);
+        } else {
+            $update_stmt->bind_param("ssiiisii", $title, $description, $time_limit, $passing_score, $max_attempts, $available_until, $is_active, $quiz_id);
+        }
+        
+        if ($update_stmt->execute()) {
+            echo json_encode(['success' => true]);
+        } else {
+            echo json_encode(['success' => false, 'message' => $update_stmt->error]);
+        }
+        exit();
+    }
+
     if ($action === 'add_question') {
         $quiz_id = (int)($_POST['quiz_id'] ?? 0);
         $question_text = trim($_POST['question_text'] ?? '');
@@ -207,7 +288,8 @@ if ($verify_stmt->get_result()->num_rows === 0) {
     exit();
 }
 
-$quiz = QuizController::get_quiz($quiz_id);
+$quiz = QuizController::get_quiz($quiz_id, true);
+$current_status = $quiz['status'] ?? (!empty($quiz['is_active']) ? 'published' : 'draft');
 ?>
 
 <!DOCTYPE html>
@@ -234,8 +316,57 @@ $quiz = QuizController::get_quiz($quiz_id);
     
     <div class="container">
         <div class="quiz-editor">
-            <h1 class="page-title" style="margin-bottom: 1rem;"><?php echo htmlspecialchars($quiz['title']); ?></h1>
+            <div class="card" style="margin-bottom: 2rem; border-top: 3px solid var(--primary);">
+                <h2 style="margin-top: 0; margin-bottom: 1rem;">Testa detaļas</h2>
+                <form id="quizDetailsForm" method="POST">
+                    <input type="hidden" name="action" value="update_quiz_details">
+                    <input type="hidden" name="quiz_id" value="<?php echo $quiz_id; ?>">
+                    
+                    <div class="form-group">
+                        <label class="form-label" for="quiz_title">Testa virsraksts</label>
+                        <input class="form-input" type="text" id="quiz_title" name="title" value="<?php echo htmlspecialchars($quiz['title']); ?>" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label" for="quiz_description">Apraksts</label>
+                        <textarea class="form-textarea" id="quiz_description" name="description" rows="3"><?php echo htmlspecialchars($quiz['description'] ?? ''); ?></textarea>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label" for="time_limit">Laika limits (min)</label>
+                            <input class="form-input" type="number" id="time_limit" name="time_limit" value="<?php echo $quiz['time_limit'] ?? 0; ?>" min="0">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label" for="passing_score">Nokārtošanas slieksnis (%)</label>
+                            <input class="form-input" type="number" id="passing_score" name="passing_score" value="<?php echo $quiz['passing_score'] ?? 60; ?>" min="0" max="100">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label" for="max_attempts">Maksimālie mēģinājumi</label>
+                            <input class="form-input" type="number" id="max_attempts" name="max_attempts" value="<?php echo $quiz['max_attempts'] ?? 0; ?>" min="0" placeholder="0 = bez ierobežojuma">
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label" for="available_until">📅 Pieejams līdz (opcionals)</label>
+                        <input class="form-input" type="datetime-local" id="available_until" name="available_until" value="<?php echo $quiz['available_until'] ? substr($quiz['available_until'], 0, 16) : ''; ?>">
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="status">Statuss</label>
+                        <select class="form-select" id="status" name="status">
+                            <option value="draft" <?php echo $current_status === 'draft' ? 'selected' : ''; ?>>Melnraksts</option>
+                            <option value="published" <?php echo $current_status === 'published' ? 'selected' : ''; ?>>Publicēts</option>
+                        </select>
+                    </div>
+                    
+                    <button type="button" class="btn" onclick="saveQuizDetails()">✓ Saglabāt detaļas</button>
+                </form>
+            </div>
             
+            <h2 style="margin-bottom: 1rem;">📝 Jautājumi</h2>
             <button class="btn" onclick="openModal('addQuestionModal')">+ Pievienot jautājumu</button>
             
             <div class="questions-list" style="margin-top: 1.5rem;">
@@ -507,6 +638,32 @@ $quiz = QuizController::get_quiz($quiz_id);
                 alert('Kļūda: ' + err.message);
             });
         });
+        
+        function saveQuizDetails() {
+            const form = document.getElementById('quizDetailsForm');
+            const formData = new FormData(form);
+            
+            fetch('edit_quiz.php?id=<?php echo $quiz_id; ?>', {
+                method: 'POST',
+                body: formData
+            }).then(async r => {
+                const text = await r.text();
+                try {
+                    const d = JSON.parse(text);
+                    if (d.success) {
+                        alert('Detaļas saglabātas!');
+                        window.location.href = 'manage_quizzes.php?class_id=<?php echo (int)$quiz['class_id']; ?>';
+                    } else {
+                        alert(d.message || 'Kļūda saglabājot detaļas');
+                    }
+                } catch (err) {
+                    alert('Kļūda: ' + text.slice(0, 200));
+                }
+            }).catch(err => {
+                alert('Kļūda: ' + err.message);
+            });
+        }
+
     </script>
 </body>
 </html>
