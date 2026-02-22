@@ -293,7 +293,7 @@ $quiz = QuizController::get_quiz($quiz_id);
                     <div class="form-row">
                         <div class="form-group">
                             <label class="form-label" for="question_type">Tips</label>
-                            <select class="form-select" id="question_type" name="question_type">
+                            <select class="form-select" id="question_type" name="question_type" onchange="handleQuestionTypeChange()">
                                 <option value="multiple_choice">Vairākas atbildes</option>
                                 <option value="true_false">Patiess/Aplams</option>
                             </select>
@@ -314,7 +314,7 @@ $quiz = QuizController::get_quiz($quiz_id);
                         </div>
                     </div>
                     
-                    <button type="button" class="btn btn-secondary" onclick="addAnswerInput()">+ Pievienot atbildi</button>
+                    <button type="button" id="addAnswerBtn" class="btn btn-secondary" onclick="addAnswerInput()">+ Pievienot atbildi</button>
                 </form>
             </div>
             <div class="modal-footer">
@@ -325,8 +325,91 @@ $quiz = QuizController::get_quiz($quiz_id);
     </div>
     
     <script>
-        function openModal(modalId) { document.getElementById(modalId).classList.add('active'); }
+        function openModal(modalId) { 
+            document.getElementById(modalId).classList.add('active');
+            // Reset form when opening modal
+            if (modalId === 'addQuestionModal') {
+                document.getElementById('questionForm').reset();
+                document.getElementById('question_type').value = 'multiple_choice';
+                // Reset answers to default state
+                const answersContainer = document.getElementById('answersContainer');
+                answersContainer.innerHTML = `
+                    <h4 style="margin-bottom: 0.5rem;">Atbildes</h4>
+                    <div class="answer-input">
+                        <input type="text" class="answer-text" placeholder="Atbildes variants 1" required>
+                        <input type="checkbox" class="answer-correct" title="Pareiza atbilde">
+                        <button type="button" class="btn btn-small" onclick="removeAnswerInput(this)">Noņemt</button>
+                    </div>
+                `;
+                document.getElementById('addAnswerBtn').style.display = 'block';
+                // Clear image preview
+                document.getElementById('questionImagePreview').innerHTML = '';
+            }
+        }
         function closeModal(modalId) { document.getElementById(modalId).classList.remove('active'); }
+        
+        function handleQuestionTypeChange() {
+            const questionType = document.getElementById('question_type').value;
+            const answersContainer = document.getElementById('answersContainer');
+            const addAnswerBtn = document.getElementById('addAnswerBtn');
+            
+            if (questionType === 'true_false') {
+                // Clear existing answers
+                const existingInputs = answersContainer.querySelectorAll('.answer-input');
+                existingInputs.forEach(input => input.remove());
+                
+                // Add True/False options with regular styling
+                const trueFalseOptions = ['✓ Patiess', '✗ Aplams'];
+                
+                trueFalseOptions.forEach((answer, index) => {
+                    const div = document.createElement('div');
+                    div.className = 'answer-input true-false-answer';
+                    div.innerHTML = `
+                        <input type="text" class="answer-text" value="${answer}" readonly style="cursor: not-allowed;">
+                        <input type="checkbox" class="answer-correct true-false-checkbox" data-index="${index}" title="Pareiza atbilde">
+                        <button type="button" class="btn btn-small" disabled style="opacity: 0.3; cursor: not-allowed;">Noņemt</button>
+                    `;
+                    answersContainer.appendChild(div);
+                });
+                
+                // Add event listeners for radio button behavior
+                const checkboxes = answersContainer.querySelectorAll('.true-false-checkbox');
+                checkboxes.forEach(checkbox => {
+                    checkbox.addEventListener('change', function() {
+                        if (this.checked) {
+                            // Uncheck other checkbox
+                            checkboxes.forEach(cb => {
+                                if (cb !== this) {
+                                    cb.checked = false;
+                                }
+                            });
+                        }
+                    });
+                });
+                
+                // Hide add answer button for true/false
+                addAnswerBtn.style.display = 'none';
+            } else {
+                // Remove true/false answers if switching back to multiple choice
+                const trueFalseAnswers = answersContainer.querySelectorAll('.true-false-answer');
+                trueFalseAnswers.forEach(answer => answer.remove());
+                
+                // Show add answer button
+                addAnswerBtn.style.display = 'block';
+                
+                // Add default answer input if empty
+                if (answersContainer.querySelectorAll('.answer-input').length === 0) {
+                    const div = document.createElement('div');
+                    div.className = 'answer-input';
+                    div.innerHTML = `
+                        <input type="text" class="answer-text" placeholder="Atbildes variants 1" required>
+                        <input type="checkbox" class="answer-correct" title="Pareiza atbilde">
+                        <button type="button" class="btn btn-small" onclick="removeAnswerInput(this)">Noņemt</button>
+                    `;
+                    answersContainer.appendChild(div);
+                }
+            }
+        }
         
         function addAnswerInput() {
             const div = document.createElement('div');
@@ -375,13 +458,32 @@ $quiz = QuizController::get_quiz($quiz_id);
             e.preventDefault();
             const formData = new FormData(this);
             const answers = [];
+            const questionType = document.getElementById('question_type').value;
             
             document.querySelectorAll('.answer-input').forEach(input => {
-                answers.push({
-                    text: input.querySelector('.answer-text').value,
-                    correct: input.querySelector('.answer-correct').checked ? 1 : 0
-                });
+                const answerText = input.querySelector('.answer-text').value;
+                const isCorrect = input.querySelector('.answer-correct').checked ? 1 : 0;
+                
+                if (answerText.trim() !== '') {
+                    answers.push({
+                        text: answerText,
+                        correct: isCorrect
+                    });
+                }
             });
+            
+            // For true/false questions, ensure we have exactly 2 answers
+            if (questionType === 'true_false' && answers.length !== 2) {
+                alert('Jautājumam "Patiess/Aplams" jābūt tieši divām atbildēm!');
+                return;
+            }
+            
+            // Ensure at least one correct answer
+            const hasCorrect = answers.some(a => a.correct === 1);
+            if (!hasCorrect) {
+                alert('Lūdzu, atzīmējiet vismaz vienu pareizu atbildi!');
+                return;
+            }
             
             formData.append('answers', JSON.stringify(answers));
             formData.append('action', 'add_question');
